@@ -13,15 +13,13 @@ The project is designed for moments when normal phone interaction may be difficu
 | Code repository | [github.com/gemini-mouse/aurora-security](https://github.com/gemini-mouse/aurora-security) | Source of truth for the app, backend, and website |
 | Kaggle notebook | Submitted with the Kaggle writeup | Reproducible Gemma 4 audio-risk inference demo |
 
-This repository exists to verify that the submission is backed by real implementation work, not only a video mockup.
-
-## Competition Alignment
+## Product and Technical Focus
 
 Aurora Security targets the **Safety & Trust** and **LiteRT** themes of the Gemma 4 Good Hackathon.
 
 - **Impact & Vision:** hands-free emergency support for people who may not be able to call or text during a crisis.
 - **Technical Depth:** on-device Gemma 4 LiteRT-LM audio analysis, local signal gating, crisis-clip capture, deterministic SOS decision logic, and multi-channel trusted-contact delivery.
-- **Real-world Utility:** a working Android implementation, an iOS MVP, a Cloudflare backend, and a public product website.
+- **Real-world Utility:** a working Android implementation, a Cloudflare backend, and a public product website.
 
 ## What Aurora Does
 
@@ -47,7 +45,7 @@ The mobile app sends the crisis clip to Gemma 4 with a structured prompt that as
 - `Situation Assessment`
 - `Danger Level: Danger / High / Medium / Low`
 
-Only `Danger Level` is used for automation. The rest of the response is kept as human-readable context for history records and trusted-contact summaries.
+Only `Danger` and `High` danger levels trigger automatic escalation in verified mode. The rest of the response is kept as human-readable context for history records and trusted-contact summaries.
 
 Decision policy:
 
@@ -57,7 +55,7 @@ Decision policy:
 | Instant mode | Send SOS after countdown |
 | Verified mode + `Danger` or `High` | Send SOS |
 | Verified mode + `Medium` or `Low` | Save history, suppress automatic escalation |
-| AI unavailable or missing result | Fail safe and allow SOS |
+| AI unavailable or missing result | Keep user-initiated SOS available and avoid blocking emergency action |
 
 This keeps the AI layer auditable: Gemma 4 interprets the audio, while the app owns the safety policy.
 
@@ -81,10 +79,8 @@ This keeps the AI layer auditable: Gemma 4 interprets the audio, while the app o
 | `app/src/main/java/app/aurorasecurity/security/CrisisAudioRecorder.kt` | Five-second crisis audio capture |
 | `app/src/main/java/app/aurorasecurity/security/NoiseMonitor.kt` | Microphone PCM capture and dB estimation |
 | `cf-backend/` | Cloudflare Worker backend for trusted-contact binding and alert delivery |
-| `ios/AuroraSecurity/` | Native SwiftUI MVP port |
 | `website/` | Public product website |
 | `icons/` | App icon assets |
-| `tools/` | Visual/audio asset helper scripts |
 
 ## Android Setup
 
@@ -142,14 +138,6 @@ Main backend responsibilities:
 - Dispatch SOS messages and optional AI summaries.
 - Store pending delivery work when the network is unavailable.
 
-## iOS MVP
-
-The `ios/AuroraSecurity/` folder contains a native SwiftUI MVP with the same product structure: Detect, AI, History, Settings, crisis audio capture, local history, location snapshot, and backend alert dispatch.
-
-Open `ios/AuroraSecurity/AuroraSecurity.xcodeproj` with Xcode 16 or newer.
-
-Note: public Swift LiteRT-LM runtime support is still emerging, so the iOS implementation isolates inference behind `LiteRTAudioAnalysisRuntime` for later replacement with the official adapter.
-
 ## Privacy and Safety Model
 
 Aurora Security is built around bounded data movement:
@@ -167,7 +155,3 @@ Aurora Security is built around bounded data movement:
 Aurora Security is a personal safety assistance prototype. It is not an official emergency dispatch system, police reporting system, medical service, or guaranteed rescue solution.
 
 Alerts, audio analysis, location sharing, phone calls, SMS, Push, Telegram delivery, and backend services can fail or be delayed because of permissions, device limits, network issues, operating-system restrictions, third-party service outages, or model error. In immediate danger, contact local emergency services as soon as possible.
-
-## License
-
-This repository is prepared for the Kaggle Gemma 4 Good Hackathon. If selected as a winning submission, licensing will follow the competition rules, including the required winner license terms.
