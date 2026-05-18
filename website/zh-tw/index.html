@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+
+<html data-theme="dark" lang="zh-TW">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta name="referrer" content="strict-origin-when-cross-origin"/>
+<base href="../"/>
+<title>Aurora Security | 智慧安全防護，守護您與摯愛</title>
+<meta content="Aurora Security 提供基於裝置端的智慧安全防護。偵測危險、即時通知信任的守護者，讓您與在乎的人安心無憂。" name="description"/>
+<meta content="Aurora Security | 智慧安全防護，守護您與摯愛" property="og:title"/>
+<meta content="基於裝置端的智慧安全防護，幫助您照顧自己與最在乎的人。" property="og:description"/>
+<link href="https://aurorasecurity.app/zh-tw/" rel="canonical"/>
+<link href="assets/favicon.png" rel="icon" type="image/png"/>
+<link href="assets/app_icon.png" rel="apple-touch-icon"/>
+<meta content="assets/app_icon.png" property="og:image"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&amp;family=Noto+Sans+TC:wght@600;700;800&amp;family=Noto+Serif+JP:wght@600;700;800&amp;family=Noto+Serif+KR:wght@600;700;800&amp;family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;family=Playfair+Display:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="style.css" rel="stylesheet"/>
+</head>
+<body>
+<canvas id="aurora-canvas"></canvas>
+<div class="bg-overlay"></div>
+<header id="site-header">
+<div class="header-inner">
+<a aria-label="Aurora Security 首頁" class="logo-link" href="#">
+<img alt="Aurora Security" class="logo-img" src="assets/logo_transparent_clean.png"/>
+<span class="brand-lockup">
+<span class="brand-name">Aurora</span>
+<span class="brand-subtitle">Security</span>
+</span>
+</a>
+<nav aria-label="主要導覽" class="main-nav">
+<a class="nav-link" href="#features">核心功能</a>
+<a class="nav-link" href="#how-it-works">運作方式</a>
+<a class="nav-link" href="#product-video">產品影片</a>
+<a class="nav-link" href="#faq">常見問題</a>
+</nav>
+<div class="nav-actions">
+<div class="lang-dropdown">
+<button aria-expanded="false" aria-haspopup="listbox" aria-label="選擇語言" class="lang-btn" id="lang-btn">
+<svg class="icon-globe" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><line x1="2" x2="22" y1="12" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+<span class="lang-current">繁中</span>
+<svg class="icon-chevron" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</button>
+<ul class="lang-menu" id="lang-menu" role="listbox">
+<li aria-selected="false" role="option"><a data-lang="en" href="index.html">English</a></li>
+<li aria-selected="true" role="option"><a data-lang="zh-tw" href="zh-tw/index.html">繁體中文</a></li>
+<li aria-selected="false" role="option"><a data-lang="es" href="es/index.html">Español</a></li>
+<li aria-selected="false" role="option"><a data-lang="ko" href="ko/index.html">한국어</a></li>
+<li aria-selected="false" role="option"><a data-lang="ja" href="ja/index.html">日本語</a></li>
+</ul>
+</div>
+<button aria-label="切換亮/暗模式" class="theme-btn" id="theme-toggle">
+<span class="theme-icon-wrap">
+<svg class="icon-moon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+<svg class="icon-sun" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="5"></circle><line x1="12" x2="12" y1="1" y2="3"></line><line x1="12" x2="12" y1="21" y2="23"></line><line x1="4.22" x2="5.64" y1="4.22" y2="5.64"></line><line x1="18.36" x2="19.78" y1="18.36" y2="19.78"></line><line x1="1" x2="3" y1="12" y2="12"></line><line x1="21" x2="23" y1="12" y2="12"></line><line x1="4.22" x2="5.64" y1="19.78" y2="18.36"></line><line x1="18.36" x2="19.78" y1="5.64" y2="4.22"></line></svg>
+</span>
+</button>
+<a class="btn-download" href="https://play.google.com/apps/testing/app.aurorasecurity.security">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+                    免費下載
+                </a>
+<button aria-label="開啟選單" class="hamburger" id="hamburger">
+<span></span><span></span><span></span>
+</button>
+</div>
+</div>
+<nav class="mobile-nav" id="mobile-nav">
+<a class="mobile-link" href="#features">核心功能</a>
+<a class="mobile-link" href="#how-it-works">運作方式</a>
+<a class="mobile-link" href="#product-video">產品影片</a>
+<a class="mobile-link" href="#faq">常見問題</a>
+<a class="mobile-cta" href="https://play.google.com/apps/testing/app.aurorasecurity.security">免費下載</a>
+</nav>
+</header>
+<main>
+<section class="hero-section" id="hero">
+<div class="hero-grid">
+<div class="hero-text" data-reveal="">
+<h1 class="hero-title">
+                        讓安心隨行<br/>
+<span class="aurora-text">關鍵時刻，守護不缺席</span>
+</h1>
+<p class="hero-desc">Aurora Security 在背景安靜守護。透過裝置端 AI 偵測潛在危險，讓您與家人每一天都能安心無憂。</p>
+<div class="hero-actions">
+<a class="btn-primary-hero" href="https://play.google.com/apps/testing/app.aurorasecurity.security">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+                            免費下載
+                        </a>
+<a class="btn-ghost-hero" href="#how-it-works">
+                            了解運作方式
+                            <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="5" x2="19" y1="12" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+</a>
+</div>
+<div class="hero-proof-grid" data-reveal="">
+<article class="hero-proof-card">
+<span class="hero-proof-label">家庭守護</span>
+<p>當家人通勤、夜間讀書或獨自返家時，提供他們最安心的隱形後盾。</p>
+</article>
+<article class="hero-proof-card">
+<span class="hero-proof-label">女性安全</span>
+<p>夜間漫步、獨自騎車，或是不便拿起手機的時刻，給您多一份支持與保障。</p>
+</article>
+<article class="hero-proof-card">
+<span class="hero-proof-label">伴侶關懷</span>
+<p>在緊急狀況下保持聯繫，同時維持隱私，不讓關心變成過度干涉或監控。</p>
+</article>
+</div>
+</div>
+<div class="hero-visual" data-reveal-right="">
+<div class="phone-scene">
+<div class="aurora-glow-ring"></div>
+<div aria-label="Aurora Security app preview" class="phone-wrap hero-photo-phone"><img alt="Aurora Security app interface" class="phone-img" src="assets/phone_hero.png"/></div>
+<div class="float-card card-1">
+<div class="float-icon">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+</div>
+<div class="float-text">
+<span class="float-label">狀態</span>
+<span class="float-value">防護啟動中</span>
+</div>
+</div>
+<div class="float-card card-2">
+<div class="float-dot pulse-dot"></div>
+<span class="float-value">智慧 AI 監測</span>
+</div>
+</div>
+</div>
+</div>
+<div class="hero-feature-bar" data-reveal="">
+<article class="hero-feature-item">
+<span class="hero-feature-value">100%</span>
+<span class="hero-feature-label">裝置端安全<br/>分析</span>
+</article>
+<article class="hero-feature-item">
+<span class="hero-feature-value">0</span>
+<span class="hero-feature-label">零廣告與<br/>零追蹤</span>
+</article>
+<article class="hero-feature-item">
+<span class="hero-feature-value">2</span>
+<span class="hero-feature-label">可信聯絡人<br/>隨時協助</span>
+</article>
+<article class="hero-feature-item">
+<span class="hero-feature-value">24/7</span>
+<span class="hero-feature-label">靜默背景<br/>防護</span>
+</article>
+</div><div class="scroll-indicator">
+<span>向下捲動探索</span>
+<div class="scroll-arrow">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</div>
+</section>
+<section class="features-section" id="features">
+<div class="container">
+<div class="section-header" data-reveal="">
+<span class="section-eyebrow">核心防護</span>
+<h2 class="section-title">專為真實生活打造<br/>只為讓您安心</h2>
+<p class="section-desc">Aurora 結合了智慧的 AI 偵測、快速的緊急通報，以及明確的隱私界線，讓您可以安心在自己的手機上使用，並推薦給您在乎的人。</p>
+</div>
+<div class="features-bento">
+<div class="bento-card bento-large feature-card" data-reveal="">
+<div class="bento-card-inner">
+<div class="feature-icon-wrap">
+<svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.85" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 12h1.5"></path><path d="M7.75 9v6"></path><path d="M11 6.25v11.5"></path><path d="M14.25 8.25v7.5"></path><path d="M17.5 10.25v3.5"></path><path d="M19.5 12H20"></path></svg>
+</div>
+<h3>智慧 AI 危險偵測</h3>
+<p>Aurora 會在您的手機上偵測危險跡象；日常對話與背景聲音維持在裝置端，緊急分享也會被嚴格限制。</p>
+</div>
+</div>
+<div class="bento-card feature-card" data-reveal="">
+<div class="bento-card-inner">
+<div class="feature-icon-wrap">
+<svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M13 2 4.5 13.2h5.3L8.9 22 19.5 9.4h-5.7L13 2Z"></path></svg>
+</div>
+<h3>求助無須猶豫</h3>
+<p>當偵測到危險時，Aurora 會自動啟動 SOS 警報，無需操作手機即可獲得協助。</p>
+</div>
+</div>
+<div class="bento-card feature-card" data-reveal="">
+<div class="bento-card-inner">
+<div class="feature-icon-wrap">
+<svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.85" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="8.5" r="2.5"></circle><path d="M7.5 17.5a4.5 4.5 0 0 1 9 0"></path><circle cx="5.5" cy="10" r="2"></circle><path d="M2.5 17.5a3.5 3.5 0 0 1 3.5-3"></path><circle cx="18.5" cy="10" r="2"></circle><path d="M18 14.5a3.5 3.5 0 0 1 3.5 3"></path></svg>
+</div>
+<h3>值得信賴的推薦</h3>
+<p>日常對話與平時背景音都留在您的裝置上，因此 Aurora 更值得信賴，也更適合推薦給您在乎的人。</p>
+</div>
+</div>
+</div>
+<div class="feature-splits">
+<div class="split-block" data-reveal="">
+<div class="split-text">
+<span class="split-tag">智慧偵測</span>
+<h2>當您無法反應時，我們為您防護。</h2>
+<p>即使手機鎖定或不在手邊，Aurora 仍會持續留意危險跡象。</p>
+<ul class="feature-checklist">
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 聲音與動作門檻觸發偵測</li>
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 異常事件模式分析</li>
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 智慧過濾減少誤報</li>
+</ul>
+</div>
+<div class="split-img-wrap">
+<img alt="Aurora Security 守護夜間漫步、騎車返家與獨自通勤" class="split-img" src="assets/scenario/women_on_the_go_asia.jpg"/>
+<div class="img-glow"></div>
+</div>
+</div>
+<div class="split-block reverse" data-reveal="">
+<div class="split-text">
+<span class="split-tag">時刻相伴</span>
+<h2>以安靜的方式，保護您愛的人。</h2>
+<p>Aurora 能迅速向您指定的聯絡人發送求助訊息，且不打擾您的日常起居。</p>
+<ul class="feature-checklist">
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 推播、簡訊、Telegram 與電話警報</li>
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 最多設定 2 位緊急聯絡人</li>
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 提供短暫取消時間以防誤報</li>
+</ul>
+</div>
+<div class="split-img-wrap">
+<img alt="Aurora Security 守護兒童、青少年與您在乎的人" class="split-img" src="assets/scenario/kids_teens_asia.jpg"/>
+<div class="img-glow"></div>
+</div>
+</div>
+<div class="split-block" data-reveal="">
+<div class="split-text">
+<span class="split-tag">為您在乎的人打造</span>
+<h2>樂於推薦，更易於信任。</h2>
+<p>Aurora 的設計理念是提供保護、尊重隱私，並讓您樂意將其保留在手機中。</p>
+<ul class="feature-checklist">
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 融入日常的安靜防護</li>
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 支援個人與家庭使用的設定</li>
+<li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="20 6 9 17 4 12"></polyline></svg> 帶來安心感，不讓安全變成監控</li>
+</ul>
+</div>
+<div class="split-img-wrap">
+<img alt="Aurora Security 易於推薦給父母、長輩與您最在乎的人" class="split-img" src="assets/scenario/parents_seniors_asia.jpg"/>
+<div class="img-glow"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="hiw-section" id="how-it-works">
+<div class="container">
+<div class="section-header" data-reveal="">
+<span class="section-eyebrow">運作方式</span>
+<h2 class="section-title">簡單三步驟<br/>完成安全防護</h2>
+<p class="hiw-intro">安靜。自動。在您需要時隨時啟動。</p>
+</div>
+<div class="hiw-steps">
+<div class="hiw-step" data-reveal="">
+<div class="step-layout">
+<div aria-hidden="true" class="step-visual">
+<div class="step-icon">
+<svg fill="none" stroke="currentColor" stroke-width="1.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="23"></line><line x1="8" x2="16" y1="23" y2="23"></line></svg>
+</div>
+<span class="step-badge">1</span>
+</div>
+<div class="step-copy">
+<div class="step-title-row">
+<h3>Aurora 持續留意</h3>
+<span class="step-line"></span>
+</div>
+<p>裝置端 AI 會留意求救、撞擊及異常聲音，且不會上傳您的音訊。</p>
+</div>
+</div>
+</div>
+<div class="hiw-step" data-reveal="">
+<div class="step-layout">
+<div aria-hidden="true" class="step-visual">
+<div class="step-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M10.29 3.86L1.82 18A2 2 0 0 0 3.53 21h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path><path d="M12 9v4.5"></path><circle cx="12" cy="17" fill="currentColor" r="0.8" stroke="none"></circle></svg>
+</div>
+<span class="step-badge">2</span>
+</div>
+<div class="step-copy">
+<div class="step-title-row">
+<h3>偵測到威脅</h3>
+<span class="step-line"></span>
+</div>
+<p>如果 Aurora 偵測到危險，簡短的靜音倒數讓您有時間取消誤報。</p>
+</div>
+</div>
+</div>
+<div class="hiw-step" data-reveal="">
+<div class="step-layout">
+<div aria-hidden="true" class="step-visual">
+<div class="step-icon">
+<svg fill="none" stroke="currentColor" stroke-width="1.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.5 19.79 19.79 0 0 1 1.64 5c-.08-1.1.89-2.2 2-2.18h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 10a16 16 0 0 0 6 6l.9-.81a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z"></path></svg>
+</div>
+<span class="step-badge">3</span>
+</div>
+<div class="step-copy">
+<div class="step-title-row">
+<h3>通知守護者</h3>
+<span class="step-line"></span>
+</div>
+<p>信任的聯絡人會透過推播、簡訊、Telegram 或電話，迅速收到您的位置與警報。</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="video-section" id="product-video">
+<div class="container">
+<div class="video-shell" data-reveal="">
+<div class="section-header video-header">
+<span class="section-eyebrow">產品影片</span>
+<h2 class="section-title">如何在關鍵時刻守護你</h2>
+<p class="section-desc">從危險偵測到通知信任聯絡人，了解 Aurora 如何在需要時提供支援。</p>
+</div>
+<div class="video-frame-wrap" aria-label="Aurora Security product introduction video">
+<iframe class="product-video-iframe" width="100%" height="100%" style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;" src="about:blank" data-youtube-id="PR8oty_1xbw" title="Aurora Security product introduction video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
+</div>
+</div>
+</section>
+<section class="app-tour-section" id="app-tour">
+<div class="container">
+<div class="app-tour-shell" data-reveal="">
+<div class="section-header app-tour-header">
+<span class="section-eyebrow">深入了解</span>
+<h2 class="section-title">為什麼選擇 Aurora</h2>
+<p class="section-desc">看看 Aurora 如何偵測危險、引導應變，並在日常生活中保持簡單的防護。</p>
+</div>
+<div class="app-tour-layout">
+<div class="app-tour-copy" data-reveal-right="">
+<div aria-labelledby="app-tour-tab-detect" class="app-tour-copy-panel is-active" data-app-screen-panel="detect" id="app-tour-panel-detect" role="tabpanel">
+<span class="app-tour-panel-kicker">即時防護</span>
+<h3>即時偵測<br/>潛在危險。</h3>
+<p>偵測畫面整合了防護狀態、即時音量、兩種 SOS 啟動方式，一目了然且安心。</p>
+<div class="app-tour-detail-list">
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 3.75 6.5 6v5c0 4.25 2.46 8.17 5.5 9.27 3.04-1.1 5.5-5.02 5.5-9.27V6L12 3.75Z"></path><path d="m9.15 12.15 1.65 1.65 4.05-4.1"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>防護狀態一目了然</strong>
+<span>隨時掌握防護是否啟動、AI 是否準備就緒，以及哪種應變模式可用。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 12h2.6l1.65-3.35 2.85 6.7 2.1-4h2.25l1.5 2.65H20.5"></path><path d="M18.1 8.05a1.1 1.1 0 1 1 0-.01"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>即時分貝追蹤</strong>
+<span>無需開啟額外選單，直接將當前音量與您設定的門檻進行比較。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M8.5 15.5V11a3.5 3.5 0 1 1 7 0v4.5"></path><path d="M7 15.5h10"></path><path d="M12 4.5V3"></path><path d="m7 7-1.2-1.2"></path><path d="m17 7 1.2-1.2"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>幾秒內啟動靜音或響亮 SOS</strong>
+<span>直接從主防護畫面選擇低調求助或全面警報。</span>
+</div>
+</div>
+</div>
+</div>
+<div aria-labelledby="app-tour-tab-ai" class="app-tour-copy-panel" data-app-screen-panel="ai" hidden="" id="app-tour-panel-ai" role="tabpanel">
+<span class="app-tour-panel-kicker">導引應變</span>
+<h3>了解後續<br/>處理流程。</h3>
+<p>AI 畫面說明警報如何處理、包含哪些證據，以及模型如何在感覺不對勁時協助快速判斷。</p>
+<div class="app-tour-detail-list">
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect height="8" rx="2" width="8" x="3" y="3"></rect><path d="M7 11v4a2 2 0 0 0 2 2h4"></path><rect height="8" rx="2" width="8" x="13" y="13"></rect></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>即時 SOS 流程</strong>
+<span>檢視通知信任聯絡人的步驟，並快速分享您的緊急情況。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 12h2.6l1.7-3.2 2.5 6.4 2.15-4h2.4l1.45 2.8H20.5"></path><path d="m15.7 5.8.55 1.2 1.2.55-1.2.55-.55 1.2-.55-1.2-1.2-.55 1.2-.55.55-1.2Z"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>音訊與分析總覽</strong>
+<span>了解何時會附上音訊證據，以及 AI 情境資訊如何幫助可信任的人更快做出回應。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect height="8" rx="2" width="8" x="8" y="8"></rect><path d="M12 5.5V8"></path><path d="M12 16v2.5"></path><path d="M5.5 12H8"></path><path d="M16 12h2.5"></path><path d="m7.2 7.2 1.5 1.5"></path><path d="m15.3 15.3 1.5 1.5"></path><path d="m7.2 16.8 1.5-1.5"></path><path d="m15.3 8.7 1.5-1.5"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>AI 就緒狀態</strong>
+<span>查看設定是仍在準備中，還是已可支援本機音訊分析。</span>
+</div>
+</div>
+</div>
+</div>
+<div aria-labelledby="app-tour-tab-settings" class="app-tour-copy-panel" data-app-screen-panel="settings" hidden="" id="app-tour-panel-settings" role="tabpanel">
+<span class="app-tour-panel-kicker">日常控制</span>
+<h3>根據作息<br/>調整設定。</h3>
+<p>設定畫面讓您校準聲音與動作靈敏度，使防護在現實生活中更實用，而非過度敏感。</p>
+<div class="app-tour-detail-list">
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h6"></path><path d="M14 6h6"></path><circle cx="11" cy="6" r="2"></circle><path d="M4 12h11"></path><path d="M18 12h2"></path><circle cx="15" cy="12" r="2"></circle><path d="M4 18h3"></path><path d="M11 18h9"></path><circle cx="9" cy="18" r="2"></circle></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>調整聲音靈敏度</strong>
+<span>設定適合您環境的門檻，無論是通勤、旅遊還是夜歸。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect height="15" rx="2" width="6" x="9" y="4.5"></rect><path d="M12 16.2h.01"></path><path d="m6.8 8.1 1.9-2.2"></path><path d="m17.2 8.1-1.9-2.2"></path><path d="m6.8 15.9 1.9 2.2"></path><path d="m17.2 15.9-1.9 2.2"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>啟用動作確認</strong>
+<span>透過晃動裝置確認聲音與動作，減少誤報。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M6 7h12"></path><path d="M6 12h12"></path><path d="M6 17h12"></path><circle cx="9" cy="7" r="2"></circle><circle cx="15" cy="12" r="2"></circle><circle cx="12" cy="17" r="2"></circle></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>設定聯絡方式</strong>
+<span>選擇要使用的聯絡方式，讓警報符合您偏好的聯絡習慣。</span>
+</div>
+</div>
+</div>
+</div>
+<div aria-labelledby="app-tour-tab-history" class="app-tour-copy-panel" data-app-screen-panel="history" hidden="" id="app-tour-panel-history" role="tabpanel">
+<span class="app-tour-panel-kicker">警報資訊</span>
+<h3>事後檢視<br/>歷史警報。</h3>
+<p>歷史紀錄畫面協助您回顧發送內容、發生時間與地點，讓其他人能清楚了解情況。</p>
+<div class="app-tour-detail-list">
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 6.5h13a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H10l-4.5 3.4V8.5a2 2 0 0 1 2-2Z"></path><path d="M8.5 11h7"></path><path d="M8.5 14.5h4.5"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>再次閱讀警報訊息</strong>
+<span>查看信任聯絡人收到的確切訊息，無須猜測溝通內容。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9 4.5h6"></path><path d="M8 7h8"></path><rect height="15" rx="2.2" width="11" x="6.5" y="4.5"></rect><path d="M9.5 10.5h5"></path><path d="M9.5 14h5"></path><path d="M9.5 17.5h3"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>快速確認事件詳情</strong>
+<span>檢視每個已儲存事件的附帶時間、裝置與聲音資訊。</span>
+</div>
+</div>
+<div class="app-tour-detail-item">
+<span aria-hidden="true" class="app-tour-detail-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 20s-5.5-4.6-5.5-9a5.5 5.5 0 1 1 11 0c0 4.4-5.5 9-5.5 9Z"></path><circle cx="12" cy="11" r="2.15"></circle><path d="M16.25 16.25 19 19"></path></svg>
+</span>
+<div class="app-tour-detail-copy">
+<strong>開啟位置資訊</strong>
+<span>當有人需要確認哪裡需要協助時，快速跳轉至 Google 地圖。</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="app-tour-visual" data-reveal="">
+<div class="app-tour-controls">
+<div aria-label="Aurora app screens" class="app-tour-tablist" role="tablist">
+<button aria-controls="app-tour-panel-detect" aria-selected="true" class="app-tour-tab is-active" data-app-screen-target="detect" id="app-tour-tab-detect" role="tab" tabindex="0" type="button">
+<span aria-hidden="true" class="app-tour-tab-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.95" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 3.75 6.5 6v5c0 4.25 2.46 8.17 5.5 9.27 3.04-1.1 5.5-5.02 5.5-9.27V6L12 3.75Z"></path><path d="M8.9 12h2.3l1.1-2.15 1.65 4.15H15.5"></path></svg>
+</span>
+<span class="app-tour-tab-label">偵測</span>
+</button>
+<button aria-controls="app-tour-panel-ai" aria-selected="false" class="app-tour-tab" data-app-screen-target="ai" id="app-tour-tab-ai" role="tab" tabindex="-1" type="button">
+<span aria-hidden="true" class="app-tour-tab-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.95" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m12 4.5 1.15 2.75 2.75 1.15-2.75 1.15L12 12.3l-1.15-2.75-2.75-1.15 2.75-1.15L12 4.5Z"></path><path d="m17.5 13.6.72 1.7 1.68.72-1.68.72-.72 1.68-.72-1.68-1.68-.72 1.68-.72.72-1.7Z"></path><path d="m6.9 14.8.52 1.2 1.18.5-1.18.5-.52 1.2-.52-1.2-1.18-.5 1.18-.5.52-1.2Z"></path></svg>
+</span>
+<span class="app-tour-tab-label">AI</span>
+</button>
+<button aria-controls="app-tour-panel-settings" aria-selected="false" class="app-tour-tab" data-app-screen-target="settings" id="app-tour-tab-settings" role="tab" tabindex="-1" type="button">
+<span aria-hidden="true" class="app-tour-tab-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.95" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h6"></path><path d="M14 6h6"></path><circle cx="11" cy="6" r="2"></circle><path d="M4 12h11"></path><path d="M18 12h2"></path><circle cx="15" cy="12" r="2"></circle><path d="M4 18h3"></path><path d="M11 18h9"></path><circle cx="9" cy="18" r="2"></circle></svg>
+</span>
+<span class="app-tour-tab-label">設定</span>
+</button>
+<button aria-controls="app-tour-panel-history" aria-selected="false" class="app-tour-tab" data-app-screen-target="history" id="app-tour-tab-history" role="tab" tabindex="-1" type="button">
+<span aria-hidden="true" class="app-tour-tab-icon">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.95" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 7.5v4.7l3 1.8"></path><path d="M20 12a8 8 0 1 1-2.34-5.66"></path><path d="M20 5v4h-4"></path></svg>
+</span>
+<span class="app-tour-tab-label">歷史紀錄</span>
+</button>
+</div>
+</div>
+<div class="app-tour-device">
+<div class="app-tour-device-glow"></div>
+<div class="app-tour-phone">
+<div class="app-tour-screen">
+<img alt="Aurora 偵測畫面顯示防護狀態、即時音量與 SOS 控制" class="app-tour-shot is-active" data-app-screen-image="detect" id="app-tour-screen-detect" src="assets/screenshot/detect.png"/>
+<img alt="Aurora AI 畫面顯示 SOS 引導、音訊證據與模型分析詳情" class="app-tour-shot" data-app-screen-image="ai" hidden="" id="app-tour-screen-ai" src="assets/screenshot/ai.png"/>
+<img alt="Aurora 設定畫面顯示聲音靈敏度與動作確認控制" class="app-tour-shot" data-app-screen-image="settings" hidden="" id="app-tour-screen-settings" src="assets/screenshot/settings.png"/>
+<img alt="Aurora 歷史紀錄畫面顯示已儲存的 SOS 警報與事件詳情" class="app-tour-shot" data-app-screen-image="history" hidden="" id="app-tour-screen-history" src="assets/screenshot/history.png"/>
+<button aria-label="顯示歷史紀錄畫面" class="app-tour-hotspot app-tour-hotspot-history" data-app-screen-target="history" type="button"></button>
+<button aria-label="顯示偵測畫面" class="app-tour-hotspot app-tour-hotspot-detect" data-app-screen-target="detect" type="button"></button>
+<button aria-label="顯示 AI 畫面" class="app-tour-hotspot app-tour-hotspot-ai" data-app-screen-target="ai" type="button"></button>
+<button aria-label="顯示設定畫面" class="app-tour-hotspot app-tour-hotspot-settings" data-app-screen-target="settings" type="button"></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="faq-section" id="faq">
+<div class="container">
+<div class="faq-grid">
+<div class="faq-left" data-reveal="">
+<span class="section-eyebrow">常見問題</span>
+<h2 class="section-title">安裝之前</h2>
+<p class="section-desc">安全是個嚴肅的課題。我們深信您有權利完全了解 Aurora 的運作方式以及我們開發它的初衷。</p>
+<a class="faq-contact" href="mailto:contact@aurorasecurity.app">
+                            還有疑問嗎？
+                            <svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="5" x2="19" y1="12" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+</a>
+</div>
+<div class="faq-list" data-reveal="">
+<div class="faq-item">
+<button aria-expanded="false" class="faq-question">
+<span>Aurora Security 真的免費嗎？</span>
+<div class="faq-chevron">
+<svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</button>
+<div class="faq-answer">
+<p>是的。Aurora Security 的核心防護功能是免費的。我們的目標很簡單：讓可靠的個人安全防護更容易取得，而不是更難負擔。</p>
+</div>
+</div>
+<div class="faq-item">
+<button aria-expanded="false" class="faq-question">
+<span>Aurora 會錄音或上傳我的私人音訊嗎？</span>
+<div class="faq-chevron">
+<svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</button>
+<div class="faq-answer">
+<p>不會。平時的對話與日常背景聲音不會上傳到 Aurora，聲音分析會在您的裝置上完成。只有在警報觸發當下，才可能上傳一段 5 秒警報音檔；若您另外同意協助 AI 改進，這些資料將用於未來安全模型的微調與訓練。</p>
+</div>
+</div>
+<div class="faq-item">
+<button aria-expanded="false" class="faq-question">
+<span>Aurora 團隊會知道我的隱私情況嗎？</span>
+<div class="faq-chevron">
+<svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</button>
+<div class="faq-answer">
+<p>不會。Aurora 不會接收您日常生活的即時音訊。緊急警報只會發送給您指定的可信任聯絡人；若您選擇協助 AI 改進，Aurora 也只會接收警報觸發當下擷取的 5 秒警報音檔，用於負責任地改進未來模型。</p>
+</div>
+</div>
+<div class="faq-item">
+<button aria-expanded="false" class="faq-question">
+<span>為什麼應用程式需要麥克風與位置權限？</span>
+<div class="faq-chevron">
+<svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</button>
+<div class="faq-answer">
+<p>Aurora 需要麥克風權限來偵測聲音、位置權限來進行緊急定位，並需要簡訊或通話權限來發送求救警報。這些權限是為了支援您啟用的防護功能。</p>
+</div>
+</div>
+<div class="faq-item">
+<button aria-expanded="false" class="faq-question">
+<span>Aurora 能夠應對哪些狀況？</span>
+<div class="faq-chevron">
+<svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</button>
+<div class="faq-answer">
+<p>Aurora 能對尖銳噪音事件做出反應，並在啟用 AI 分析時，評估某些聲音是否代表危險。它的目的是幫助您的聯絡人快速了解是否需要關注該情況。</p>
+</div>
+</div>
+<div class="faq-item"><button aria-expanded="false" class="faq-question"><span>為什麼 Aurora 會詢問是否願意提供警報音檔？</span><div class="faq-chevron"><svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg></div></button><div class="faq-answer"><p>目前 Aurora 使用的是通用型模型。來自真實緊急觸發、且已去識別化的 5 秒警報音檔，有助於我們募集求救聲音與危險訊號，進一步微調並訓練更安全的未來模型。這個回饋循環，能讓 Aurora 持續為最需要它的人變得更好。</p></div></div><div class="faq-item">
+<button aria-expanded="false" class="faq-question">
+<span>如果被電視、電影或正常噪音誤觸發怎麼辦？</span>
+<div class="faq-chevron">
+<svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</button>
+<div class="faq-answer">
+<p>Aurora 內建過濾機制以減少明顯的誤報，並在發送警報前提供短暫的取消時間。這項設計有助於在靈敏度與日常實用性之間取得平衡。</p>
+</div>
+</div>
+<div class="faq-item">
+<button aria-expanded="false" class="faq-question">
+<span>警報是如何發送的？</span>
+<div class="faq-chevron">
+<svg fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</div>
+</button>
+<div class="faq-answer">
+<p>您最多可以設定 2 位緊急聯絡人。在緊急情況下，他們可以透過推播通知、簡訊、Telegram 或電話，連同求救訊息與即時位置連結收到警報。</p>
+<div class="faq-table-wrap">
+<table class="faq-alert-table">
+<thead>
+<tr>
+<th>方式</th>
+<th>文字 SOS</th>
+<th>音訊片段</th>
+<th>AI 摘要</th>
+<th>費用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>推播</td>
+<td><span aria-label="支援" class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></td>
+<td></td>
+<td><span aria-label="支援" class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></td>
+<td>免費</td>
+</tr>
+<tr>
+<td>簡訊</td>
+<td><span aria-label="支援" class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></td>
+<td></td>
+<td><span aria-label="支援" class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></td>
+<td>電信費用</td>
+</tr>
+<tr>
+<td>Telegram</td>
+<td><span aria-label="支援" class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></td>
+<td><span aria-label="支援" class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></td>
+<td><span aria-label="支援" class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></td>
+<td>免費</td>
+</tr>
+<tr>
+<td>電話</td>
+<td></td>
+<td></td>
+<td></td>
+<td>電信費用</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div aria-hidden="true" class="faq-alert-cards">
+<article class="faq-alert-card">
+<h4>推播</h4>
+<div class="faq-alert-card-row"><span>文字 SOS</span><span class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></div>
+<div class="faq-alert-card-row"><span>音訊片段</span><span aria-label="不支援" class="table-empty">-</span></div>
+<div class="faq-alert-card-row"><span>AI 摘要</span><span class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></div>
+<div class="faq-alert-card-row"><span>費用</span><strong>免費</strong></div>
+</article>
+<article class="faq-alert-card">
+<h4>簡訊</h4>
+<div class="faq-alert-card-row"><span>文字 SOS</span><span class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></div>
+<div class="faq-alert-card-row"><span>音訊片段</span><span aria-label="不支援" class="table-empty">-</span></div>
+<div class="faq-alert-card-row"><span>AI 摘要</span><span class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></div>
+<div class="faq-alert-card-row"><span>費用</span><strong>電信費用</strong></div>
+</article>
+<article class="faq-alert-card">
+<h4>Telegram</h4>
+<div class="faq-alert-card-row"><span>文字 SOS</span><span class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></div>
+<div class="faq-alert-card-row"><span>音訊片段</span><span class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></div>
+<div class="faq-alert-card-row"><span>AI 摘要</span><span class="table-check"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><polyline points="4 10.5 8 14.5 16 6.5"></polyline></svg></span></div>
+<div class="faq-alert-card-row"><span>費用</span><strong>免費</strong></div>
+</article>
+<article class="faq-alert-card">
+<h4>電話</h4>
+<div class="faq-alert-card-row"><span>文字 SOS</span><span aria-label="不支援" class="table-empty">-</span></div>
+<div class="faq-alert-card-row"><span>音訊片段</span><span aria-label="不支援" class="table-empty">-</span></div>
+<div class="faq-alert-card-row"><span>AI 摘要</span><span aria-label="不支援" class="table-empty">-</span></div>
+<div class="faq-alert-card-row"><span>費用</span><strong>電信費用</strong></div>
+</article>
+</div>
+<p class="faq-note">電話提供直接響鈴功能，但不包含文字詳情、音訊片段或 AI 摘要。</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="about-section" id="about">
+<div class="container">
+<div class="about-inner" data-reveal="">
+<div class="about-img-col">
+<img alt="Aurora Security 為個人、家庭與伴侶帶來安心感" class="about-img" src="assets/about_story.png"/>
+</div>
+<div class="about-text-col">
+<span class="section-eyebrow">理念</span>
+<h2 class="section-title"><span>有些愛，</span><span>距離再遠</span><span>也常伴左右。</span></h2>
+<p>我們無法時時刻刻陪伴在愛人身邊。但即便生活讓他們短暫離開我們的視線，我們依然希望他們感到被保護、被支持，永不孤單。</p>
+<p>透過智慧精準的警報，Aurora 在察覺異狀時能讓您信任的聯絡人即時應變，確保每一聲呼救都不被忽視。</p>
+<div class="about-credit">
+<span class="about-credit-label">AI 基礎</span>
+<p>感謝 Gemma 4 模型開發，讓 Aurora 的 AI 防護能夠順利落地。</p>
+</div>
+<blockquote class="about-quote">
+                            「Aurora Security 不只是一個安全應用程式。<br/>它是指引您平安回家的光。」
+                        </blockquote>
+</div>
+</div>
+</div>
+</section>
+<section class="cta-section">
+<div class="container">
+<div class="cta-card" data-reveal="">
+<div class="cta-aurora-bg"></div>
+<div class="cta-content">
+<span class="section-eyebrow">開始使用</span>
+<h2><span>開始保護</span><span>您最在乎的人</span></h2>
+<p>給自己與愛的人一份安心的禮物。</p>
+<div class="cta-assurance">
+<div class="cta-assurance-item">
+<strong>隱私至上</strong>
+<span>音訊保留在裝置端。</span>
+</div>
+<div class="cta-assurance-item">
+<strong>實用考量</strong>
+<span>專為真實日常生活打造。</span>
+</div>
+<div class="cta-assurance-item">
+<strong>值得信賴</strong>
+<span>源自對信任的極致追求。</span>
+</div>
+</div>
+<div class="cta-buttons">
+<a aria-label="在 Google Play 上取得" class="btn-store btn-android" href="https://play.google.com/apps/testing/app.aurorasecurity.security">
+<img alt="在 Google Play 上取得" class="store-badge-img" src="assets/google-play-badge.svg"/>
+</a>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<footer class="site-footer">
+<div class="container">
+<div class="footer-inner">
+<div class="footer-brand">
+<div class="footer-brand-lockup">
+<img alt="Aurora Security" class="footer-logo" src="assets/logo_transparent_clean.png"/>
+<span class="brand-lockup footer-brand-text">
+<span class="brand-name">Aurora</span>
+<span class="brand-subtitle">Security</span>
+</span>
+</div>
+<p>日常生活中的智慧防護。<br/>為您與關心您的人帶來平靜。</p>
+</div>
+<div class="footer-links-col">
+<span class="footer-col-title">產品</span>
+<a href="#features">核心功能</a>
+<a href="#how-it-works">運作方式</a>
+<a href="#product-video">產品影片</a>
+<a href="https://play.google.com/apps/testing/app.aurorasecurity.security">免費下載</a>
+</div>
+<div class="footer-links-col">
+<span class="footer-col-title">公司</span>
+<a href="#about">理念</a>
+<a href="#faq">常見問題</a>
+<a href="mailto:contact@aurorasecurity.app">聯絡我們</a>
+</div>
+<div class="footer-links-col">
+<span class="footer-col-title">法律聲明</span>
+<a href="privacy.html">隱私權政策</a>
+<a href="terms.html">使用條款</a>
+</div>
+</div>
+<div class="footer-bottom">
+<span>© 2026 Aurora Security. 版權所有。</span>
+</div>
+</div>
+</footer>
+<script src="script.js?v=20260518-youtube153"></script>
+</body>
+</html>

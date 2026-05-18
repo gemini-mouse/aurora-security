@@ -1,0 +1,21 @@
+name = "alarm-telegram-backend"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+
+# Bindings for Telegram Bot Token and Shared Authorization Token will be 
+# provided as Secrets via `wrangler secret put PARAMETER`
+# - TELEGRAM_BOT_TOKEN
+# - ALARM_API_TOKEN
+# - FCM_PROJECT_ID
+# - FCM_CLIENT_EMAIL
+# - FCM_PRIVATE_KEY
+# - USER_ID_HASH_SALT
+
+[[d1_databases]]
+binding = "DB" # Available in your code as env.DB
+database_name = "alarm-db"
+database_id = "25b0182d-02ad-4c1a-8201-b4632a52a76c"
+
+[[r2_buckets]]
+binding = "TRAINING_AUDIO_BUCKET"
+bucket_name = "aurora-training-audio"
