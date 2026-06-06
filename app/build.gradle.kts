@@ -28,8 +28,8 @@ android {
         applicationId = "app.aurorasecurity.security"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.2.1"
+        versionCode = 14
+        versionName = "1.3.7"
 
         buildConfigField(
             "String",
@@ -102,6 +102,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    lint {
+        disable += "StateFlowValueCalledInComposition"
     }
 }
 

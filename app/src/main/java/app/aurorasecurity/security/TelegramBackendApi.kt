@@ -7,6 +7,37 @@ import org.json.JSONObject
 import java.util.Base64
 
 class TelegramBackendApi {
+    suspend fun registerBackendDevice(
+        settings: AlertContactSettings,
+        userId: String,
+        bindCode: String,
+        installSecret: String,
+    ): String? = withContext(Dispatchers.IO) {
+        if (settings.apiUrl.isBlank() || settings.apiToken.isBlank()) return@withContext null
+
+        val payload = JSONObject()
+            .put("userId", userId)
+            .put("bindCode", bindCode)
+            .put("deviceName", settings.deviceName)
+            .put("installSecret", installSecret)
+            .toString()
+
+        val baseUrl = resolveBackendBaseUrl(settings.apiUrl)
+
+        return@withContext try {
+            val response = executeJsonRequest(
+                url = "$baseUrl/devices/register",
+                token = settings.apiToken,
+                method = "POST",
+                body = payload,
+                wrapNetworkErrors = true,
+            )
+            JSONObject(response).optString("deviceToken").takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun registerUser(
         settings: AlertContactSettings,
         userId: String,
@@ -146,7 +177,9 @@ class TelegramBackendApi {
     ): Boolean = withContext(Dispatchers.IO) {
         if (settings.apiUrl.isBlank()) return@withContext false
 
-        val m4aFilename = clip.file.name.let { name ->
+        val audioFile = clip.file ?: return@withContext false
+        val audioBytes = clip.m4aBytes ?: return@withContext false
+        val m4aFilename = audioFile.name.let { name ->
             if (name.endsWith(".m4a", ignoreCase = true)) name
             else name.substringBeforeLast('.') + ".m4a"
         }
@@ -155,7 +188,11 @@ class TelegramBackendApi {
             .put("userId", userId)
             .put("caption", "5-second crisis audio clip captured by Aurora Security.")
             .put("filename", m4aFilename)
-            .put("audioBase64", Base64.getEncoder().encodeToString(clip.m4aBytes))
+            .put("audioBase64", Base64.getEncoder().encodeToString(audioBytes))
+            .put("sendTelegram", settings.useTelegram)
+            .put("sendLine", settings.useLine)
+            .put("sendPush", settings.usePush)
+            .put("durationMs", 5_000)
             .toString()
 
         val baseUrl = resolveBackendBaseUrl(settings.apiUrl)
@@ -214,6 +251,13 @@ class TelegramBackendApi {
             .put("caption", payload.caption)
             .put("filename", payload.filename)
             .put("audioBase64", Base64.getEncoder().encodeToString(file.readBytes()))
+            .put("sendTelegram", payload.sendToTelegram)
+            .put("sendLine", payload.sendToLine)
+            .put("sendPush", payload.sendToPush)
+            .put("pushEventId", payload.pushEventId)
+            .put("pushTitle", payload.pushTitle)
+            .put("pushMessage", payload.pushMessage)
+            .put("durationMs", 5_000)
             .toString()
 
         return@withContext try {

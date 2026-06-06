@@ -130,7 +130,10 @@ internal const val TERMS_OF_USE_URL = "https://aurorasecurity.app/terms.html"
 internal const val PUSH_BIND_BASE_URL = "https://aurorasecurity.app/push-bind"
 internal const val PUSH_BIND_HOST = "aurorasecurity.app"
 internal const val PUSH_BIND_PATH = "/push-bind"
+internal const val APP_DEEP_LINK_BASE_URL = "https://aurorasecurity.app/app"
+internal const val APP_DEEP_LINK_PATH_PREFIX = "/app"
 internal const val SETTINGS_SECTION_CONTACTS = "contacts"
+internal const val SETTINGS_SECTION_CONTACTS_LINE = "contacts_line"
 internal const val SETTINGS_SECTION_CONTACTS_TELEGRAM = "contacts_telegram"
 internal const val SETTINGS_SECTION_CONTACTS_PUSH = "contacts_push"
 internal const val SETTINGS_SECTION_CONTACTS_SMS = "contacts_sms"
@@ -145,10 +148,30 @@ internal enum class AlarmTab(@param:StringRes val labelRes: Int, val icon: Image
     Settings(R.string.tab_settings, Icons.Outlined.Settings),
 }
 
+internal enum class AppDeepLinkDestination {
+    AI,
+    History,
+    Settings,
+}
+
 internal fun buildPushSetupLink(bindCode: String): String {
     return Uri.parse(PUSH_BIND_BASE_URL)
         .buildUpon()
         .appendQueryParameter("code", bindCode.trim().uppercase())
+        .build()
+        .toString()
+}
+
+internal fun buildAppDeepLink(destination: AppDeepLinkDestination): String {
+    val pathSegment = when (destination) {
+        AppDeepLinkDestination.AI -> "ai"
+        AppDeepLinkDestination.History -> "history"
+        AppDeepLinkDestination.Settings -> "settings"
+    }
+
+    return Uri.parse(APP_DEEP_LINK_BASE_URL)
+        .buildUpon()
+        .appendPath(pathSegment)
         .build()
         .toString()
 }
@@ -167,6 +190,20 @@ internal fun extractPushBindCodeFromUri(uri: Uri?): String? {
     return sanitizedCode.ifBlank { null }
 }
 
+internal fun extractAppDeepLinkDestination(uri: Uri?): AppDeepLinkDestination? {
+    if (uri == null) return null
+    if (!uri.scheme.equals("https", ignoreCase = true)) return null
+    if (!uri.host.equals(PUSH_BIND_HOST, ignoreCase = true)) return null
+
+    val normalizedPath = uri.path?.trimEnd('/')?.lowercase().orEmpty()
+    return when (normalizedPath) {
+        "$APP_DEEP_LINK_PATH_PREFIX/ai" -> AppDeepLinkDestination.AI
+        "$APP_DEEP_LINK_PATH_PREFIX/history" -> AppDeepLinkDestination.History
+        "$APP_DEEP_LINK_PATH_PREFIX/settings" -> AppDeepLinkDestination.Settings
+        else -> null
+    }
+}
+
 internal enum class SecurityModePreset(
     @param:StringRes val labelRes: Int,
     @param:StringRes val descriptionRes: Int,
@@ -176,9 +213,9 @@ internal enum class SecurityModePreset(
     val preloadAiEngine: Boolean,
     val sosDispatchMode: SosDispatchMode,
 ) {
-    Commute(
-        labelRes = R.string.preset_commute,
-        descriptionRes = R.string.preset_commute_description,
+    Daily(
+        labelRes = R.string.preset_daily,
+        descriptionRes = R.string.preset_daily_description,
         alarmThresholdDb = 90f,
         shakeDetectionEnabled = true,
         movementThresholdG = 3.0f,
@@ -257,22 +294,29 @@ internal fun localizeAiStatusLabel(
 
 internal fun localizeAiStatusMessage(
     context: Context,
-    message: String,
+    aiState: AiFeatureUiState,
 ): String {
-    return when {
-        message == "Not initialized" -> context.getString(R.string.ai_backend_not_initialized)
-        message == "Model not downloaded yet." -> context.getString(R.string.ai_status_message_not_downloaded)
-        message.startsWith("Download ") && message.endsWith(" to enable local audio analysis.") ->
-            context.getString(R.string.ai_status_message_download_prompt)
-        message == "Model downloaded. Initialize the AI engine before enabling AI analysis." ->
-            context.getString(R.string.ai_status_message_downloaded)
-        message == "Model ready for on-device audio analysis." ->
-            context.getString(R.string.ai_status_message_ready)
-        message == "Initializing Gemma audio engine..." ->
-            context.getString(R.string.ai_status_message_initializing)
-        message == "Model downloaded. Preparing LiteRT-LM engine..." ->
-            context.getString(R.string.ai_status_message_download_preparing)
-        else -> message
+    val detail = aiState.statusMessageDetail.ifBlank {
+        context.getString(R.string.ai_status_detail_unknown_error)
+    }
+    return when (aiState.statusMessageKey) {
+        AiStatusMessageKey.NotDownloaded -> context.getString(R.string.ai_status_message_not_downloaded)
+        AiStatusMessageKey.DownloadPrompt,
+        AiStatusMessageKey.InitializePrompt -> context.getString(R.string.ai_status_message_download_prompt)
+        AiStatusMessageKey.Downloading -> context.getString(R.string.ai_status_message_downloading)
+        AiStatusMessageKey.DownloadPreparing -> context.getString(R.string.ai_status_message_download_preparing)
+        AiStatusMessageKey.Downloaded -> context.getString(R.string.ai_status_message_downloaded)
+        AiStatusMessageKey.Ready -> context.getString(R.string.ai_status_message_ready)
+        AiStatusMessageKey.Initializing -> context.getString(R.string.ai_status_message_initializing)
+        AiStatusMessageKey.DownloadFailed -> context.getString(R.string.ai_status_message_download_failed, detail)
+        AiStatusMessageKey.InitializationFailed -> context.getString(R.string.ai_status_message_initialization_failed, detail)
+        AiStatusMessageKey.Analyzing -> context.getString(R.string.ai_status_message_analyzing)
+        AiStatusMessageKey.AnalysisComplete -> context.getString(R.string.ai_status_message_analysis_complete)
+        AiStatusMessageKey.GpuFallbackRecovered -> context.getString(R.string.ai_status_message_gpu_fallback_recovered)
+        AiStatusMessageKey.CpuFallbackFailed -> context.getString(R.string.ai_status_message_cpu_fallback_failed, detail)
+        AiStatusMessageKey.AnalysisFailed -> context.getString(R.string.ai_status_message_analysis_failed, detail)
+        AiStatusMessageKey.ModelDeleted -> context.getString(R.string.ai_status_message_model_deleted)
+        AiStatusMessageKey.CouldNotComplete -> context.getString(R.string.ai_status_message_could_not_complete)
     }
 }
 
@@ -308,7 +352,7 @@ internal fun SecurityModePreset.matches(
     } else {
         true
     }
-    val preloadMatches = !aiSettings.enableAiAnalysis ||
+    val preloadMatches = !aiSettings.isAiEnabled ||
         aiSettings.preloadAiInBackground == preloadAiEngine
     val dispatchMatches = aiSettings.sosDispatchMode == sosDispatchMode
     return thresholdMatches &&
@@ -339,7 +383,7 @@ internal fun heroAiStatusLabel(
     aiState: AiFeatureUiState,
 ): String? {
     return when {
-        !aiSettings.enableAiAnalysis -> null
+        !aiSettings.isAiEnabled -> null
         !aiSettings.preloadAiInBackground -> context.getString(R.string.ai_status_pending)
         aiState.modelStatus == AiModelStatus.Downloading ||
             aiState.modelStatus == AiModelStatus.Initializing -> context.getString(R.string.ai_status_pending)
@@ -369,14 +413,12 @@ internal fun clampAiSettingsForDevice(
     return if (!aiDeviceSupport.supportsOnDeviceAi) {
         aiSettings.copy(
             isAiEnabled = false,
-            enableAiAnalysis = false,
             preloadAiInBackground = false,
             sosDispatchMode = SosDispatchMode.Immediate,
             modelType = fallbackModel,
         )
     } else {
         aiSettings.copy(
-            enableAiAnalysis = aiSettings.isAiEnabled,
             sosDispatchMode = if (aiSettings.isAiEnabled) {
                 aiSettings.sosDispatchMode
             } else {
@@ -393,7 +435,7 @@ internal suspend fun prepareAiEngineIfNeeded(
 ) {
     val currentModel = GemmaModelType.fromName(aiSettings.modelType)
     GemmaAudioAnalysisManager.refreshState(context, currentModel)
-    if (!aiSettings.enableAiAnalysis) return
+    if (!aiSettings.isAiEnabled || !aiSettings.preloadAiInBackground) return
 
     if (GemmaAudioAnalysisManager.isModelDownloaded(context, currentModel)) {
         runCatching {
@@ -407,7 +449,7 @@ internal suspend fun prepareAiEngineIfNeeded(
 }
 
 internal val SETTINGS_PRESET_ROWS = listOf(
-    listOf(SecurityModePreset.Commute, SecurityModePreset.Travel),
+    listOf(SecurityModePreset.Daily, SecurityModePreset.Travel),
     listOf(SecurityModePreset.Workout, SecurityModePreset.NightWalk),
 )
 

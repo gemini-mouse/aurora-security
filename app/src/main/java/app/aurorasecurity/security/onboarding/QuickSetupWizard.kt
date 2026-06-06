@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.LocationOn
@@ -409,6 +410,7 @@ private fun QuickSetupContactsStep(
     Column(verticalArrangement = Arrangement.spacedBy(layout.rowSpacing)) {
         contactStatuses.forEach { status ->
             val icon = when (status.type) {
+                ContactSetupType.Line -> Icons.AutoMirrored.Outlined.Chat
                 ContactSetupType.Push -> Icons.Outlined.NotificationsActive
                 ContactSetupType.Telegram -> Icons.AutoMirrored.Outlined.Send
                 ContactSetupType.Sms -> Icons.Outlined.Sms

@@ -11,6 +11,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
 internal object AudioEncodingUtil {
@@ -22,7 +24,7 @@ internal object AudioEncodingUtil {
     private const val AAC_INPUT_CHUNK_SIZE = 16_384
     private const val CODEC_TIMEOUT_US = 10_000L
 
-    fun encodePcm16ToM4aBytes(context: Context, samples: ShortArray): ByteArray {
+    fun encodePcm16ToM4aBytes(context: Context, samples: ShortArray): ByteArray? {
         val tempFile = File(context.cacheDir, "crisis_tmp_${System.nanoTime()}.m4a")
         return try {
             val pcmBytes = ByteArray(samples.size * PCM_BYTES_PER_SAMPLE)
@@ -105,9 +107,9 @@ internal object AudioEncodingUtil {
             codec.stop()
             codec.release()
 
-            tempFile.readBytes()
+            tempFile.takeIf { it.length() > 0L }?.readBytes()
         } catch (_: Exception) {
-            ByteArray(0)
+            null
         } finally {
             tempFile.delete()
         }
@@ -146,8 +148,8 @@ data class CrisisAudioClip(
     val triggerSource: EmergencyTriggerSource,
     val emergencyMode: EmergencyMode,
     val analysisAudioBytes: ByteArray,
-    val m4aBytes: ByteArray,
-    val file: File,
+    val m4aBytes: ByteArray?,
+    val file: File?,
     val wavFile: File,
 )
 
@@ -156,16 +158,24 @@ class CrisisAudioRecorder(
     private val onClipReady: (CrisisAudioClip) -> Unit,
 ) {
     private val lock = Any()
+    private val encodingExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "CrisisAudioRecorder").apply {
+            isDaemon = true
+        }
+    }
     private val ringBuffer = ShortArray(PRE_TRIGGER_SAMPLES)
     private var ringWriteIndex = 0
     private var ringFilledSamples = 0
     private var captureSession: CaptureSession? = null
+    @Volatile
+    private var closed = false
 
     fun appendFrame(frame: ShortArray, samplesRead: Int) {
-        if (samplesRead <= 0) return
+        if (closed || samplesRead <= 0) return
 
         var pcmDataToEncode: Pair<ShortArray, CaptureSession>? = null
         synchronized(lock) {
+            if (closed) return@synchronized
             appendToRingBufferLocked(frame, samplesRead)
 
             val activeSession = captureSession ?: return@synchronized
@@ -179,9 +189,14 @@ class CrisisAudioRecorder(
         }
 
         pcmDataToEncode?.let { (pcmData, session) ->
-            java.util.concurrent.Executors.newSingleThreadExecutor().execute {
-                val clip = finalizeClip(pcmData, session)
-                onClipReady(clip)
+            runCatching {
+                encodingExecutor.execute {
+                    if (closed) return@execute
+                    val clip = finalizeClip(pcmData, session)
+                    if (!closed) {
+                        onClipReady(clip)
+                    }
+                }
             }
         }
     }
@@ -212,6 +227,12 @@ class CrisisAudioRecorder(
                 captureSession = null
             }
         }
+    }
+
+    fun close() {
+        closed = true
+        cancelCapture()
+        encodingExecutor.shutdownNow()
     }
 
     private fun appendToRingBufferLocked(frame: ShortArray, samplesRead: Int) {
@@ -258,9 +279,12 @@ class CrisisAudioRecorder(
 
         val outputDir = File(context.filesDir, "crisis-audio").apply { mkdirs() }
         val outputBaseName = nextOutputBaseName(outputDir)
-        val outputFile = File(outputDir, "$outputBaseName.m4a")
-        FileOutputStream(outputFile).use { stream ->
-            stream.write(m4aBytes)
+        val outputFile = m4aBytes?.let { encodedAudio ->
+            File(outputDir, "$outputBaseName.m4a").also { file ->
+                FileOutputStream(file).use { stream ->
+                    stream.write(encodedAudio)
+                }
+            }
         }
         val wavFile = File(outputDir, "$outputBaseName.wav")
         FileOutputStream(wavFile).use { stream ->
@@ -278,7 +302,7 @@ class CrisisAudioRecorder(
         )
     }
 
-    private fun encodeToM4aBytes(samples: ShortArray): ByteArray {
+    private fun encodeToM4aBytes(samples: ShortArray): ByteArray? {
         return AudioEncodingUtil.encodePcm16ToM4aBytes(context, samples)
     }
 

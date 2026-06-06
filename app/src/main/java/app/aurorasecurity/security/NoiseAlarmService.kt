@@ -13,6 +13,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -52,7 +53,9 @@ class NoiseAlarmService : Service(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private lateinit var notificationManager: NotificationManager
     private lateinit var notificationFactory: NoiseAlarmNotificationFactory
+    private var isShakeListenerRegistered = false
     private var lastShakeDetectedAtMs: Long = 0L
+    private var cachedShakeThresholdMagnitudeSquared = shakeThresholdMagnitudeSquared(MovementSettings().shakeThresholdG)
     private val SHAKE_MEMORY_MS = 2_000L
     private lateinit var connectivityManager: ConnectivityManager
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -82,7 +85,7 @@ class NoiseAlarmService : Service(), SensorEventListener {
         }
         notificationFactory.createNotificationChannels(notificationManager)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        registerShakeListener()
+        applyMovementSettings()
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val networkRequest = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -132,6 +135,11 @@ class NoiseAlarmService : Service(), SensorEventListener {
                 return START_STICKY
             }
 
+            ACTION_REFRESH_MOVEMENT_SETTINGS -> {
+                applyMovementSettings()
+                return START_STICKY
+            }
+
             ACTION_START, null -> {
                 if (alarmPreferences.getMonitoringPaused()) {
                     stopSelf()
@@ -144,7 +152,8 @@ class NoiseAlarmService : Service(), SensorEventListener {
     }
 
     override fun onDestroy() {
-        monitor.stop()
+        monitor.close()
+        crisisAudioRecorder.close()
         unregisterShakeListener()
         runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
         alarmPlayer.release()
@@ -254,17 +263,31 @@ class NoiseAlarmService : Service(), SensorEventListener {
         }
     }
 
-    private fun registerShakeListener() {
-        val accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        if (accel != null) {
-            sensorManager.registerListener(this, accel, SensorManager.SENSOR_DELAY_UI)
-        }
+    private fun applyMovementSettings() {
         val settings = alarmPreferences.getMovementSettings()
+        cachedShakeThresholdMagnitudeSquared = shakeThresholdMagnitudeSquared(settings.shakeThresholdG)
         NoiseAlarmController.setMovementSettings(settings.useShakeDetection, settings.shakeThresholdG)
+        if (settings.useShakeDetection) {
+            registerShakeListener()
+        } else {
+            unregisterShakeListener()
+        }
+    }
+
+    private fun registerShakeListener() {
+        if (isShakeListenerRegistered) return
+
+        val accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
+        sensorManager.registerListener(this, accel, SensorManager.SENSOR_DELAY_UI)
+        isShakeListenerRegistered = true
     }
 
     private fun unregisterShakeListener() {
+        if (!isShakeListenerRegistered) return
+
         sensorManager.unregisterListener(this)
+        isShakeListenerRegistered = false
+        lastShakeDetectedAtMs = 0L
         NoiseAlarmController.updateShakeLevel(1.0f, false)
     }
 
@@ -273,16 +296,15 @@ class NoiseAlarmService : Service(), SensorEventListener {
             val x = event.values[0]
             val y = event.values[1]
             val z = event.values[2]
-            val magnitude = Math.sqrt((x * x + y * y + z * z).toDouble()).toFloat()
-            val gForce = magnitude / 9.81f
-            
-            val settings = alarmPreferences.getMovementSettings()
-            if (gForce >= settings.shakeThresholdG) {
-                lastShakeDetectedAtMs = System.currentTimeMillis()
+            val magnitudeSquared = x * x + y * y + z * z
+            val now = SystemClock.elapsedRealtime()
+
+            if (magnitudeSquared >= cachedShakeThresholdMagnitudeSquared) {
+                lastShakeDetectedAtMs = now
             }
-            
-            val isShaking = (System.currentTimeMillis() - lastShakeDetectedAtMs) < SHAKE_MEMORY_MS
-            NoiseAlarmController.updateShakeLevel(gForce, isShaking)
+
+            val isShaking = now - lastShakeDetectedAtMs < SHAKE_MEMORY_MS
+            NoiseAlarmController.updateShakeMagnitudeSquared(magnitudeSquared, isShaking)
         }
     }
 
@@ -303,7 +325,7 @@ class NoiseAlarmService : Service(), SensorEventListener {
     ): Boolean {
         return shouldBypassAiVerification(triggerSource) ||
             aiSettings.sosDispatchMode == SosDispatchMode.Immediate ||
-            !aiSettings.enableAiAnalysis
+            !aiSettings.isAiEnabled
     }
 
     private fun parseDangerLevelFromAnalysis(analysisText: String?): String? {
@@ -322,7 +344,7 @@ class NoiseAlarmService : Service(), SensorEventListener {
         analysisText: String?,
     ): Boolean {
         if (shouldBypassAiVerification(triggerSource)) return true
-        if (aiSettings.sosDispatchMode == SosDispatchMode.Immediate || !aiSettings.enableAiAnalysis) return true
+        if (aiSettings.sosDispatchMode == SosDispatchMode.Immediate || !aiSettings.isAiEnabled) return true
         val normalizedLevel = parseDangerLevelFromAnalysis(analysisText)
             ?.lowercase()
             ?.trim()
@@ -340,12 +362,12 @@ class NoiseAlarmService : Service(), SensorEventListener {
     private fun showCallFallbackIfNeeded(contactSettings: AlertContactSettings) {
         if (
             contactSettings.usePhoneCall &&
-            contactSettings.emergencyPhoneNumber.isNotBlank() &&
+            contactSettings.phoneCallPhoneNumber.isNotBlank() &&
             !AlarmAppVisibility.isInForeground &&
             !callFallbackShownForCurrentAlarm
         ) {
             callFallbackShownForCurrentAlarm = true
-            showCallFallbackNotification(contactSettings.emergencyPhoneNumber)
+            showCallFallbackNotification(contactSettings.phoneCallPhoneNumber)
         }
     }
 
@@ -388,6 +410,14 @@ class NoiseAlarmService : Service(), SensorEventListener {
         return null
     }
 
+    private fun mergeDeliveryStatuses(vararg statuses: TextAlertDeliveryStatus): TextAlertDeliveryStatus {
+        return when {
+            statuses.any { it == TextAlertDeliveryStatus.Sent } -> TextAlertDeliveryStatus.Sent
+            statuses.any { it == TextAlertDeliveryStatus.Failed } -> TextAlertDeliveryStatus.Failed
+            else -> TextAlertDeliveryStatus.Skipped
+        }
+    }
+
     private suspend fun onCrisisClipReady(clip: CrisisAudioClip) {
         completedAudioClips[clip.sessionId] = clip
         if (clip.sessionId == currentEmergencySessionId) {
@@ -411,7 +441,7 @@ class NoiseAlarmService : Service(), SensorEventListener {
             // --- Run AI analysis (on-device, no network needed) ---
             var analysisText: String? = null
             var historyAiResultText = "AI analysis disabled."
-            if (aiSettings.enableAiAnalysis) {
+            if (aiSettings.isAiEnabled) {
                 val currentModel = GemmaModelType.fromName(aiSettings.modelType)
                 GemmaAudioAnalysisManager.refreshState(this@NoiseAlarmService, currentModel)
                 historyAiResultText = if (GemmaAudioAnalysisManager.isModelDownloaded(this@NoiseAlarmService, currentModel)) {
@@ -424,7 +454,7 @@ class NoiseAlarmService : Service(), SensorEventListener {
                 }
             }
 
-            val shouldSendSosAlert = if (aiSettings.enableAiAnalysis) {
+            val shouldSendSosAlert = if (aiSettings.isAiEnabled) {
                 shouldDispatchAfterAnalysis(aiSettings, clip.triggerSource, analysisText)
             } else {
                 true
@@ -433,7 +463,12 @@ class NoiseAlarmService : Service(), SensorEventListener {
                 shouldBypassAiVerification(clip.triggerSource) || shouldSendSosAlert
 
             val state = NoiseAlarmController.uiState.value
-            val sosText = AlertMessageFormatter.format(contactSettings, state.triggerDb ?: state.currentDb, locationSnapshotProvider.getCurrentLocation())
+            val alertPayload = AlertMessageFormatter.formatPayload(
+                contactSettings,
+                state.triggerDb ?: state.currentDb,
+                locationSnapshotProvider.getCurrentLocation(),
+            )
+            val sosText = alertPayload.text
 
             val shouldSendSosFromClipPath =
                 !shouldDispatchImmediately(
@@ -450,38 +485,81 @@ class NoiseAlarmService : Service(), SensorEventListener {
                 TextAlertDeliveryStatus.Skipped
             }
 
-            val audioEvidenceStatus =
-                if (contactSettings.useTelegram && aiSettings.sendAudioToContacts && shouldSendFollowUpArtifacts) {
-                    alertDispatcher.sendAudioAlertForStatus(
+            val shouldBundleLineAudioAndAi =
+                contactSettings.useLine &&
+                    clip.file != null &&
+                    aiSettings.sendAudioToContacts &&
+                    aiSettings.isAiEnabled &&
+                    analysisText != null &&
+                    shouldSendFollowUpArtifacts
+
+            val bundledLineFollowUpStatus =
+                if (shouldBundleLineAudioAndAi) {
+                    alertDispatcher.sendLineAudioWithAiSummaryForStatus(
                         userId = userId,
                         settings = contactSettings,
                         clip = clip,
-                    )
-                } else {
-                    TextAlertDeliveryStatus.Skipped
-                }
-
-            val aiSummaryAnalysisStatus =
-                if (
-                    aiSettings.enableAiAnalysis &&
-                    analysisText != null &&
-                    shouldSendFollowUpArtifacts
-                ) {
-                    alertDispatcher.sendAiSummaryForStatus(
-                        userId = userId,
-                        settings = contactSettings,
-                        sessionId = clip.sessionId,
                         analysisText = analysisText,
                     )
                 } else {
                     TextAlertDeliveryStatus.Skipped
                 }
 
+            val standaloneAudioEvidenceStatus =
+                if (
+                    (
+                        contactSettings.useTelegram ||
+                            contactSettings.usePush ||
+                            (contactSettings.useLine && !shouldBundleLineAudioAndAi)
+                    ) &&
+                    aiSettings.sendAudioToContacts &&
+                    shouldSendFollowUpArtifacts
+                ) {
+                    alertDispatcher.sendAudioAlertForStatus(
+                        userId = userId,
+                        settings = contactSettings,
+                        clip = clip,
+                        sessionId = resolvedSessionId,
+                        sendToTelegram = contactSettings.useTelegram,
+                        sendToLine = contactSettings.useLine && !shouldBundleLineAudioAndAi,
+                        sendToPush = contactSettings.usePush,
+                    )
+                } else {
+                    TextAlertDeliveryStatus.Skipped
+                }
+            val audioEvidenceStatus = mergeDeliveryStatuses(
+                standaloneAudioEvidenceStatus,
+                bundledLineFollowUpStatus,
+            )
+
+            val standaloneAiSummaryAnalysisStatus =
+                if (
+                    aiSettings.isAiEnabled &&
+                    analysisText != null &&
+                    shouldSendFollowUpArtifacts
+                ) {
+                    alertDispatcher.sendAiSummaryForStatus(
+                        userId = userId,
+                        settings = contactSettings,
+                        sessionId = resolvedSessionId,
+                        analysisText = analysisText,
+                        sendToLine = !shouldBundleLineAudioAndAi,
+                    )
+                } else {
+                    TextAlertDeliveryStatus.Skipped
+                }
+            val aiSummaryAnalysisStatus = mergeDeliveryStatuses(
+                standaloneAiSummaryAnalysisStatus,
+                bundledLineFollowUpStatus,
+            )
+
             // --- Save history record ---
             val historyManager = HistoryManager(this@NoiseAlarmService)
             val recordId = historyManager.saveRecord(
                 isTest = false,
                 sosText = sosText,
+                sosMessage = alertPayload.historyMessage,
+                sosDetails = alertPayload.details,
                 sourceAudioFile = clip.file,
                 aiResultText = historyAiResultText,
                 textAlertDeliveryStatus = sosAlertStatus,
@@ -490,6 +568,15 @@ class NoiseAlarmService : Service(), SensorEventListener {
                 aiSummaryAnalysisStatus = aiSummaryAnalysisStatus,
             )
             historyRecordIdsBySession[resolvedSessionId] = recordId
+            NoiseAlarmController.publishAlertDeliveryResult(
+                AlertDeliverySummary(
+                    recordId = recordId,
+                    timestampMs = System.currentTimeMillis(),
+                    sosAlertStatus = sosAlertStatus,
+                    audioEvidenceStatus = audioEvidenceStatus,
+                    aiSummaryAnalysisStatus = aiSummaryAnalysisStatus,
+                ),
+            )
 
             if (shouldSendSosFromClipPath) {
                 showCallFallbackIfNeeded(contactSettings)
@@ -498,7 +585,7 @@ class NoiseAlarmService : Service(), SensorEventListener {
             val shouldUploadTrainingAudio =
                 aiSettings.uploadTrainingTriggerAudio &&
                     clip.triggerSource == EmergencyTriggerSource.SoundDetection
-            val trainingDangerLevel = if (aiSettings.enableAiAnalysis) {
+            val trainingDangerLevel = if (aiSettings.isAiEnabled) {
                 parseDangerLevelFromAnalysis(analysisText)
             } else {
                 null
@@ -515,16 +602,16 @@ class NoiseAlarmService : Service(), SensorEventListener {
                 clip.wavFile.delete()
             }
 
-            if (contactSettings.usePush && aiSettings.enableAiAnalysis && shouldSendFollowUpArtifacts && analysisText == null) {
+            if (contactSettings.usePush && aiSettings.isAiEnabled && shouldSendFollowUpArtifacts && analysisText == null) {
                 alertDispatcher.queuePushAnalysis(
                     userId = userId,
                     settings = contactSettings,
-                    sessionId = clip.sessionId,
+                    sessionId = resolvedSessionId,
                     analysisText = analysisText ?: alertDispatcher.aiAnalysisFallbackMessage(),
                 )
             }
 
-            if (contactSettings.useSms && aiSettings.enableAiAnalysis && shouldSendFollowUpArtifacts && analysisText == null) {
+            if (contactSettings.useSms && aiSettings.isAiEnabled && shouldSendFollowUpArtifacts && analysisText == null) {
                 launch {
                     alertDispatcher.sendSmsAnalysisResult(
                         settings = contactSettings,
@@ -576,6 +663,13 @@ class NoiseAlarmService : Service(), SensorEventListener {
         const val ACTION_SILENCE = "app.aurorasecurity.security.action.SILENCE"
         const val ACTION_TRIGGER_SILENT_SOS = "app.aurorasecurity.security.action.TRIGGER_SILENT_SOS"
         const val ACTION_TRIGGER_LOUD_SOS = "app.aurorasecurity.security.action.TRIGGER_LOUD_SOS"
+        const val ACTION_REFRESH_MOVEMENT_SETTINGS = "app.aurorasecurity.security.action.REFRESH_MOVEMENT_SETTINGS"
         private const val COUNTDOWN_SECONDS = 3
+        private const val GRAVITY_MPS2 = 9.81f
+
+        private fun shakeThresholdMagnitudeSquared(thresholdG: Float): Float {
+            val thresholdMagnitude = thresholdG * GRAVITY_MPS2
+            return thresholdMagnitude * thresholdMagnitude
+        }
     }
 }

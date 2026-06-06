@@ -22,6 +22,14 @@ data class HistoryRecord(
     val isTest: Boolean,
     val notificationTitle: String,
     val sosText: String,
+    val sosMessage: String,
+    val sosDate: String,
+    val sosTime: String,
+    val sosDeviceName: String,
+    val sosMobileNumber: String,
+    val sosCurrentSoundLevel: String,
+    val sosLocationLabel: String,
+    val sosLocationLink: String,
     val audioFilePath: String,
     val originalAudioFilePath: String,
     val aiResultText: String,
@@ -65,6 +73,14 @@ class HistoryManager(private val context: Context) {
         private const val JSON_IS_TEST = "isTest"
         private const val JSON_NOTIFICATION_TITLE = "notificationTitle"
         private const val JSON_SOS_TEXT = "sosText"
+        private const val JSON_SOS_MESSAGE = "sosMessage"
+        private const val JSON_SOS_DATE = "sosDate"
+        private const val JSON_SOS_TIME = "sosTime"
+        private const val JSON_SOS_DEVICE_NAME = "sosDeviceName"
+        private const val JSON_SOS_MOBILE_NUMBER = "sosMobileNumber"
+        private const val JSON_SOS_CURRENT_SOUND_LEVEL = "sosCurrentSoundLevel"
+        private const val JSON_SOS_LOCATION_LABEL = "sosLocationLabel"
+        private const val JSON_SOS_LOCATION_LINK = "sosLocationLink"
         private const val JSON_AUDIO_FILE_PATH = "audioFilePath"
         private const val JSON_ORIGINAL_AUDIO_FILE_PATH = "originalAudioFilePath"
         private const val JSON_AI_RESULT_TEXT = "aiResultText"
@@ -110,6 +126,8 @@ class HistoryManager(private val context: Context) {
     suspend fun saveRecord(
         isTest: Boolean,
         sosText: String,
+        sosMessage: String = "",
+        sosDetails: AlertMessageDetails? = null,
         sourceAudioFile: File?,
         aiResultText: String,
         textAlertDeliveryStatus: TextAlertDeliveryStatus? = null,
@@ -130,6 +148,14 @@ class HistoryManager(private val context: Context) {
             isTest = isTest,
             notificationTitle = "",
             sosText = sosText,
+            sosMessage = sosMessage,
+            sosDate = sosDetails?.date.orEmpty(),
+            sosTime = sosDetails?.time.orEmpty(),
+            sosDeviceName = sosDetails?.deviceName.orEmpty(),
+            sosMobileNumber = sosDetails?.mobileNumber.orEmpty(),
+            sosCurrentSoundLevel = sosDetails?.currentSoundLevel.orEmpty(),
+            sosLocationLabel = sosDetails?.locationLabel.orEmpty(),
+            sosLocationLink = sosDetails?.locationLink.orEmpty(),
             audioFilePath = finalAudioPath,
             originalAudioFilePath = sourceAudioFile?.absolutePath.orEmpty(),
             aiResultText = aiResultText,
@@ -149,16 +175,11 @@ class HistoryManager(private val context: Context) {
     suspend fun updateTextAlertDeliveryStatus(
         recordId: String,
         status: TextAlertDeliveryStatus,
-    ) = withContext(Dispatchers.IO) {
-        val currentList = getRecords().toMutableList()
-        val recordIndex = currentList.indexOfFirst { it.id == recordId }
-        if (recordIndex < 0) return@withContext
-
-        currentList[recordIndex] = currentList[recordIndex].copy(
-            textAlertDeliveryStatus = status.name,
-            sosAlertStatus = status.name,
+    ) {
+        updateAlertDeliveryStatuses(
+            recordId = recordId,
+            sosAlertStatus = status,
         )
-        saveListToPrefs(currentList)
     }
 
     suspend fun updateAlertDeliveryStatuses(
@@ -187,6 +208,9 @@ class HistoryManager(private val context: Context) {
         messageType: String,
         title: String,
         message: String,
+        sosMessage: String = "",
+        sosDetails: AlertMessageDetails? = null,
+        audioUrl: String = "",
     ) = withContext(Dispatchers.IO) {
         val currentList = getRecords().toMutableList()
         val existingIndex = currentList.indexOfFirst {
@@ -195,17 +219,33 @@ class HistoryManager(private val context: Context) {
 
         if (existingIndex >= 0) {
             val existing = currentList[existingIndex]
+            val resolvedAudioFilePath = audioUrl.ifBlank { existing.audioFilePath }
             currentList[existingIndex] = when (messageType) {
                 "ai_analysis" -> existing.copy(
                     sourceUserId = sourceUserId.ifBlank { existing.sourceUserId },
                     messageType = messageType,
                     aiResultText = message,
+                    audioFilePath = resolvedAudioFilePath,
+                )
+                "audio_evidence" -> existing.copy(
+                    sourceUserId = sourceUserId.ifBlank { existing.sourceUserId },
+                    messageType = messageType,
+                    audioFilePath = resolvedAudioFilePath,
                 )
                 else -> existing.copy(
                     sourceUserId = sourceUserId.ifBlank { existing.sourceUserId },
                     messageType = messageType,
                     notificationTitle = title,
                     sosText = message,
+                    sosMessage = sosMessage.ifBlank { existing.sosMessage.ifBlank { message } },
+                    sosDate = sosDetails?.date?.ifBlank { existing.sosDate } ?: existing.sosDate,
+                    sosTime = sosDetails?.time?.ifBlank { existing.sosTime } ?: existing.sosTime,
+                    sosDeviceName = sosDetails?.deviceName?.ifBlank { existing.sosDeviceName } ?: existing.sosDeviceName,
+                    sosMobileNumber = sosDetails?.mobileNumber?.ifBlank { existing.sosMobileNumber } ?: existing.sosMobileNumber,
+                    sosCurrentSoundLevel = sosDetails?.currentSoundLevel?.ifBlank { existing.sosCurrentSoundLevel } ?: existing.sosCurrentSoundLevel,
+                    sosLocationLabel = sosDetails?.locationLabel?.ifBlank { existing.sosLocationLabel } ?: existing.sosLocationLabel,
+                    sosLocationLink = sosDetails?.locationLink?.ifBlank { existing.sosLocationLink } ?: existing.sosLocationLink,
+                    audioFilePath = resolvedAudioFilePath,
                 )
             }
         } else {
@@ -218,8 +258,16 @@ class HistoryManager(private val context: Context) {
                 messageType = messageType,
                 isTest = false,
                 notificationTitle = if (messageType == "ai_analysis") "SOS Triggered" else title,
-                sosText = if (messageType == "ai_analysis") "" else message,
-                audioFilePath = "",
+                sosText = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else message,
+                sosMessage = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosMessage.ifBlank { message },
+                sosDate = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosDetails?.date.orEmpty(),
+                sosTime = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosDetails?.time.orEmpty(),
+                sosDeviceName = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosDetails?.deviceName.orEmpty(),
+                sosMobileNumber = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosDetails?.mobileNumber.orEmpty(),
+                sosCurrentSoundLevel = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosDetails?.currentSoundLevel.orEmpty(),
+                sosLocationLabel = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosDetails?.locationLabel.orEmpty(),
+                sosLocationLink = if (messageType == "ai_analysis" || messageType == "audio_evidence") "" else sosDetails?.locationLink.orEmpty(),
+                audioFilePath = audioUrl,
                 originalAudioFilePath = "",
                 aiResultText = if (messageType == "ai_analysis") message else "",
                 textAlertDeliveryStatus = "",
@@ -246,6 +294,19 @@ class HistoryManager(private val context: Context) {
         }
     }
 
+    suspend fun clearAll() = withContext(Dispatchers.IO) {
+        getRecords().forEach { record ->
+            deleteAudioFile(record.audioFilePath)
+            deleteOriginalAudioFiles(record.originalAudioFilePath)
+        }
+        preferences.edit().clear().commit()
+        if (historyDir.exists()) {
+            historyDir.deleteRecursively()
+        }
+        historyDir.mkdirs()
+        _recordsFlow?.value = emptyList()
+    }
+
     private fun saveListToPrefs(list: List<HistoryRecord>) {
         val array = JSONArray()
         list.forEach { record ->
@@ -269,6 +330,11 @@ class HistoryManager(private val context: Context) {
 
     private fun deleteAudioFile(audioFilePath: String) {
         if (audioFilePath.isBlank()) return
+        if (audioFilePath.startsWith("http://", ignoreCase = true) ||
+            audioFilePath.startsWith("https://", ignoreCase = true)
+        ) {
+            return
+        }
         val audioFile = File(audioFilePath)
         if (audioFile.exists()) {
             audioFile.delete()
@@ -293,7 +359,6 @@ class HistoryManager(private val context: Context) {
     }
 
     private fun JSONObject.toHistoryRecord(): HistoryRecord {
-        val legacyTextStatus = optString(JSON_TEXT_ALERT_DELIVERY_STATUS, "")
         return HistoryRecord(
             id = getString(JSON_ID),
             timestampMs = getLong(JSON_TIMESTAMP_MS),
@@ -304,11 +369,19 @@ class HistoryManager(private val context: Context) {
             isTest = optBoolean(JSON_IS_TEST, false),
             notificationTitle = optString(JSON_NOTIFICATION_TITLE, ""),
             sosText = getString(JSON_SOS_TEXT),
+            sosMessage = optString(JSON_SOS_MESSAGE, ""),
+            sosDate = optString(JSON_SOS_DATE, ""),
+            sosTime = optString(JSON_SOS_TIME, ""),
+            sosDeviceName = optString(JSON_SOS_DEVICE_NAME, ""),
+            sosMobileNumber = optString(JSON_SOS_MOBILE_NUMBER, ""),
+            sosCurrentSoundLevel = optString(JSON_SOS_CURRENT_SOUND_LEVEL, ""),
+            sosLocationLabel = optString(JSON_SOS_LOCATION_LABEL, ""),
+            sosLocationLink = optString(JSON_SOS_LOCATION_LINK, ""),
             audioFilePath = getString(JSON_AUDIO_FILE_PATH),
             originalAudioFilePath = optString(JSON_ORIGINAL_AUDIO_FILE_PATH, ""),
             aiResultText = getString(JSON_AI_RESULT_TEXT),
-            textAlertDeliveryStatus = legacyTextStatus,
-            sosAlertStatus = optString(JSON_SOS_ALERT_STATUS, legacyTextStatus),
+            textAlertDeliveryStatus = optString(JSON_TEXT_ALERT_DELIVERY_STATUS, ""),
+            sosAlertStatus = optString(JSON_SOS_ALERT_STATUS, ""),
             audioEvidenceStatus = optString(JSON_AUDIO_EVIDENCE_STATUS, ""),
             aiSummaryAnalysisStatus = optString(JSON_AI_SUMMARY_ANALYSIS_STATUS, ""),
         )
@@ -325,6 +398,14 @@ class HistoryManager(private val context: Context) {
             put(JSON_IS_TEST, isTest)
             put(JSON_NOTIFICATION_TITLE, notificationTitle)
             put(JSON_SOS_TEXT, sosText)
+            put(JSON_SOS_MESSAGE, sosMessage)
+            put(JSON_SOS_DATE, sosDate)
+            put(JSON_SOS_TIME, sosTime)
+            put(JSON_SOS_DEVICE_NAME, sosDeviceName)
+            put(JSON_SOS_MOBILE_NUMBER, sosMobileNumber)
+            put(JSON_SOS_CURRENT_SOUND_LEVEL, sosCurrentSoundLevel)
+            put(JSON_SOS_LOCATION_LABEL, sosLocationLabel)
+            put(JSON_SOS_LOCATION_LINK, sosLocationLink)
             put(JSON_AUDIO_FILE_PATH, audioFilePath)
             put(JSON_ORIGINAL_AUDIO_FILE_PATH, originalAudioFilePath)
             put(JSON_AI_RESULT_TEXT, aiResultText)

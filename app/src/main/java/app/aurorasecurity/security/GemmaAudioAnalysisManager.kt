@@ -31,7 +31,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 enum class AiModelStatus {
     NotDownloaded,
@@ -40,6 +39,26 @@ enum class AiModelStatus {
     Ready,
     Initializing,
     Error,
+}
+
+enum class AiStatusMessageKey {
+    NotDownloaded,
+    DownloadPrompt,
+    Downloading,
+    DownloadPreparing,
+    Downloaded,
+    Ready,
+    InitializePrompt,
+    Initializing,
+    DownloadFailed,
+    InitializationFailed,
+    Analyzing,
+    AnalysisComplete,
+    GpuFallbackRecovered,
+    CpuFallbackFailed,
+    AnalysisFailed,
+    ModelDeleted,
+    CouldNotComplete,
 }
 
 enum class GemmaModelType(
@@ -93,7 +112,8 @@ data class AiFeatureUiState(
     val currentModelType: GemmaModelType = GemmaModelType.E4B,
     val modelStatus: AiModelStatus = AiModelStatus.NotDownloaded,
     val downloadProgress: Int = 0,
-    val statusMessage: String = "Model not downloaded yet.",
+    val statusMessageKey: AiStatusMessageKey = AiStatusMessageKey.NotDownloaded,
+    val statusMessageDetail: String = "",
     val accelerator: String = "Not initialized",
     val isAnalyzing: Boolean = false,
     val lastAnalysisResult: AiAnalysisResult? = null,
@@ -129,11 +149,12 @@ object GemmaAudioAnalysisManager {
                 else -> AiModelStatus.NotDownloaded
             },
             downloadProgress = if (modelFile.exists()) 100 else currentState.downloadProgress,
-            statusMessage = when {
-                isLoadedForCurrentModel -> "Model ready for on-device audio analysis."
-                modelFile.exists() -> "Model downloaded. Initialize the AI engine before enabling AI analysis."
-                else -> "Download ${modelType.modelName} to enable local audio analysis."
+            statusMessageKey = when {
+                isLoadedForCurrentModel -> AiStatusMessageKey.Ready
+                modelFile.exists() -> AiStatusMessageKey.Downloaded
+                else -> AiStatusMessageKey.DownloadPrompt
             },
+            statusMessageDetail = "",
             currentModelType = modelType,
             accelerator = if (isLoadedForCurrentModel) activeBackendLabel else "Not initialized",
         )
@@ -152,7 +173,8 @@ object GemmaAudioAnalysisManager {
                 currentModelType = modelType,
                 modelStatus = AiModelStatus.Downloading,
                 downloadProgress = 0,
-                statusMessage = "Downloading ${modelType.modelName} for the first time...",
+                statusMessageKey = AiStatusMessageKey.Downloading,
+                statusMessageDetail = "",
             )
 
             val tempFile = File(targetFile.parentFile, "${targetFile.name}.part")
@@ -168,13 +190,15 @@ object GemmaAudioAnalysisManager {
                 _uiState.value = _uiState.value.copy(
                     modelStatus = AiModelStatus.Ready,
                     downloadProgress = 100,
-                    statusMessage = "MTP-capable model downloaded. Preparing LiteRT-LM engine...",
+                    statusMessageKey = AiStatusMessageKey.DownloadPreparing,
+                    statusMessageDetail = "",
                 )
             } catch (error: Exception) {
                 tempFile.delete()
                 _uiState.value = _uiState.value.copy(
                     modelStatus = AiModelStatus.Error,
-                    statusMessage = "Model download failed: ${error.message ?: "unknown error"}",
+                    statusMessageKey = AiStatusMessageKey.DownloadFailed,
+                    statusMessageDetail = error.message.orEmpty(),
                 )
                 throw error
             }
@@ -194,7 +218,8 @@ object GemmaAudioAnalysisManager {
                 _uiState.value = _uiState.value.copy(
                     modelStatus = AiModelStatus.Ready,
                     accelerator = activeBackendLabel,
-                    statusMessage = "Model ready for on-device audio analysis.",
+                    statusMessageKey = AiStatusMessageKey.Ready,
+                    statusMessageDetail = "",
                     currentModelType = modelType
                 )
                 return
@@ -206,7 +231,8 @@ object GemmaAudioAnalysisManager {
             if (!targetFile.exists()) {
                 _uiState.value = _uiState.value.copy(
                     modelStatus = AiModelStatus.NotDownloaded,
-                    statusMessage = "Download the Gemma model before enabling AI analysis.",
+                    statusMessageKey = AiStatusMessageKey.InitializePrompt,
+                    statusMessageDetail = "",
                     currentModelType = modelType
                 )
                 return
@@ -214,11 +240,12 @@ object GemmaAudioAnalysisManager {
 
             _uiState.value = _uiState.value.copy(
                 modelStatus = AiModelStatus.Initializing,
-                statusMessage = "Initializing Gemma audio engine...",
+                statusMessageKey = AiStatusMessageKey.Initializing,
+                statusMessageDetail = "",
                 currentModelType = modelType
             )
 
-            val initAttempts = buildBackendAttempts(context, preferredBackends)
+            val initAttempts = buildBackendAttempts(preferredBackends)
             val enableSpeculativeDecoding = modelSupportsSpeculativeDecoding(targetFile)
 
             var lastError: Throwable? = null
@@ -238,12 +265,13 @@ object GemmaAudioAnalysisManager {
                 } ?: continue
 
                 engine = candidateEngine
-                activeBackendLabel = buildAccelerationLabel(backendLabel, enableSpeculativeDecoding)
+                activeBackendLabel = backendLabel
                 loadedModelType = modelType
                 _uiState.value = _uiState.value.copy(
                     modelStatus = AiModelStatus.Ready,
                     accelerator = activeBackendLabel,
-                    statusMessage = "Model ready. Running on $activeBackendLabel.",
+                    statusMessageKey = AiStatusMessageKey.Ready,
+                    statusMessageDetail = activeBackendLabel,
                     currentModelType = modelType
                 )
                 return
@@ -251,7 +279,8 @@ object GemmaAudioAnalysisManager {
 
             _uiState.value = _uiState.value.copy(
                 modelStatus = AiModelStatus.Error,
-                statusMessage = "Model initialization failed: ${lastError?.message ?: "unknown error"}",
+                statusMessageKey = AiStatusMessageKey.InitializationFailed,
+                statusMessageDetail = lastError?.message.orEmpty(),
                 accelerator = "Unavailable",
             )
             throw IllegalStateException(lastError?.message ?: "Unable to initialize Gemma model", lastError)
@@ -268,14 +297,16 @@ object GemmaAudioAnalysisManager {
 
         _uiState.value = _uiState.value.copy(
             isAnalyzing = true,
-            statusMessage = "Analyzing crisis audio clip...",
+            statusMessageKey = AiStatusMessageKey.Analyzing,
+            statusMessageDetail = "",
         )
 
         return try {
             val result = runAnalysis(context, engineInstance, clip.analysisAudioBytes, modelType)
             _uiState.value = _uiState.value.copy(
                 isAnalyzing = false,
-                statusMessage = "Analysis complete.",
+                statusMessageKey = AiStatusMessageKey.AnalysisComplete,
+                statusMessageDetail = "",
                 accelerator = activeBackendLabel,
                 lastAnalysisResult = AiAnalysisResult(
                     content = result,
@@ -298,7 +329,8 @@ object GemmaAudioAnalysisManager {
                         isAnalyzing = false,
                         modelStatus = AiModelStatus.Ready,
                         accelerator = activeBackendLabel,
-                        statusMessage = "GPU audio inference failed on this device. Aurora switched to CPU and recovered successfully.",
+                        statusMessageKey = AiStatusMessageKey.GpuFallbackRecovered,
+                        statusMessageDetail = "",
                         lastAnalysisResult = AiAnalysisResult(
                             content = recoveredResult,
                             timestamp = ZonedDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
@@ -310,7 +342,8 @@ object GemmaAudioAnalysisManager {
                         isAnalyzing = false,
                         modelStatus = AiModelStatus.Error,
                         accelerator = activeBackendLabel,
-                        statusMessage = "Audio analysis failed after CPU fallback: ${recoveryError.message ?: "unknown error"}",
+                        statusMessageKey = AiStatusMessageKey.CpuFallbackFailed,
+                        statusMessageDetail = recoveryError.message.orEmpty(),
                     )
                     null
                 }
@@ -320,7 +353,8 @@ object GemmaAudioAnalysisManager {
                 isAnalyzing = false,
                 modelStatus = AiModelStatus.Error,
                 accelerator = activeBackendLabel,
-                statusMessage = "Audio analysis failed: ${error.message ?: "unknown error"}",
+                statusMessageKey = AiStatusMessageKey.AnalysisFailed,
+                statusMessageDetail = error.message.orEmpty(),
             )
             null
         }
@@ -369,7 +403,8 @@ object GemmaAudioAnalysisManager {
             if (_uiState.value.currentModelType == modelType) {
                 _uiState.value = _uiState.value.copy(
                     modelStatus = AiModelStatus.NotDownloaded,
-                    statusMessage = "Model deleted to free up space.",
+                    statusMessageKey = AiStatusMessageKey.ModelDeleted,
+                    statusMessageDetail = "",
                     downloadProgress = 0,
                     accelerator = "Not initialized"
                 )
@@ -385,21 +420,11 @@ object GemmaAudioAnalysisManager {
         return engine != null && loadedModelType == modelType && _uiState.value.modelStatus == AiModelStatus.Ready
     }
 
-    private fun buildBackendAttempts(
-        context: Context,
-        preferredBackends: List<String>,
-    ): List<Pair<String, Backend>> {
+    private fun buildBackendAttempts(preferredBackends: List<String>): List<Pair<String, Backend>> {
         val attempts = mutableListOf<Pair<String, Backend>>()
         preferredBackends.forEach { label ->
             when (label) {
                 GPU_BACKEND_LABEL -> attempts += GPU_BACKEND_LABEL to Backend.GPU()
-                NPU_BACKEND_LABEL -> {
-                    runCatching {
-                        attempts += NPU_BACKEND_LABEL to Backend.NPU(
-                            nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
-                        )
-                    }
-                }
                 CPU_BACKEND_LABEL -> attempts += CPU_BACKEND_LABEL to Backend.CPU()
             }
         }
@@ -496,32 +521,19 @@ object GemmaAudioAnalysisManager {
         }.getOrDefault(false)
     }
 
-    private fun buildAccelerationLabel(
-        backendLabel: String,
-        enableSpeculativeDecoding: Boolean,
-    ): String {
-        return if (enableSpeculativeDecoding) {
-            "$backendLabel + MTP"
-        } else {
-            backendLabel
-        }
-    }
-
     private fun deleteSupersededModelCopies(context: Context, modelType: GemmaModelType) {
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
         val modelRoot = File(baseDir, "models")
-        val legacyVersions = LEGACY_MODEL_VERSIONS[modelType].orEmpty()
-        legacyVersions
-            .filterNot { it == modelType.version }
-            .forEach { legacyVersion ->
-                val legacyFile = File(modelRoot, "$legacyVersion/${modelType.filename}")
-                if (legacyFile.exists()) {
-                    legacyFile.delete()
+        modelRoot
+            .listFiles { file -> file.isDirectory && file.name != modelType.version }
+            .orEmpty()
+            .forEach { versionDir ->
+                val supersededFile = File(versionDir, modelType.filename)
+                if (supersededFile.exists()) {
+                    supersededFile.delete()
                 }
-                legacyFile.parentFile?.let { versionDir ->
-                    if (versionDir.exists() && versionDir.isDirectory && versionDir.list()?.isEmpty() == true) {
-                        versionDir.delete()
-                    }
+                if (versionDir.list()?.isEmpty() == true) {
+                    versionDir.delete()
                 }
             }
     }
@@ -536,9 +548,9 @@ object GemmaAudioAnalysisManager {
         val conversation = engine.createConversation(
             ConversationConfig(
                 samplerConfig = SamplerConfig(
-                    topK = 32,
-                    topP = 0.9,
-                    temperature = 0.2,
+                    topK = 64,
+                    topP = 0.95,
+                    temperature = 1.0,
                 ),
             ),
         )
@@ -597,7 +609,7 @@ object GemmaAudioAnalysisManager {
         return buildString {
             appendLine("Analyze this audio clip for personal safety risk.")
             appendLine("Focus strictly on emotional distress and disruptive noises.")
-            appendLine("Think through the evidence in English internally, but do not reveal your reasoning.")
+            appendLine("Return only the requested fields. Do not explain.")
             appendLine("Write the final field values in $outputLanguage.")
             appendLine("Keep the field keys exactly in English as shown below.")
             appendLine("Keep the Danger Level value exactly one of: Danger / High / Medium / Low.")
@@ -627,11 +639,6 @@ object GemmaAudioAnalysisManager {
     }
 
     private val DEFAULT_BACKEND_ORDER = listOf(GPU_BACKEND_LABEL, CPU_BACKEND_LABEL)
-    private val LEGACY_MODEL_VERSIONS = mapOf(
-        GemmaModelType.E2B to setOf("7fa1d78473894f7e736a21d920c3aa80f950c0db"),
-        GemmaModelType.E4B to setOf("main"),
-    )
     private const val GPU_BACKEND_LABEL = "GPU"
-    private const val NPU_BACKEND_LABEL = "NPU"
     private const val CPU_BACKEND_LABEL = "CPU"
 }

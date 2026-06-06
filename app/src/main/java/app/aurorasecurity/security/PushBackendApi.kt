@@ -120,6 +120,14 @@ class PushBackendApi {
             .put("messageType", payload.messageType)
             .put("title", payload.title)
             .put("message", payload.message)
+            .put("sosMessage", payload.sosMessage)
+            .put("sosDate", payload.sosDate)
+            .put("sosTime", payload.sosTime)
+            .put("sosDeviceName", payload.sosDeviceName)
+            .put("sosMobileNumber", payload.sosMobileNumber)
+            .put("sosCurrentSoundLevel", payload.sosCurrentSoundLevel)
+            .put("sosLocationLabel", payload.sosLocationLabel)
+            .put("sosLocationLink", payload.sosLocationLink)
             .toString()
 
         return@withContext try {

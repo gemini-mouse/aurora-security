@@ -33,10 +33,11 @@
             android:required="false" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="aurora_emergency_alerts" />
+            android:value="aurora_trusted_contact_sos_ringtone_alerts" />
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -52,6 +53,17 @@
                     android:scheme="https"
                     android:host="aurorasecurity.app"
                     android:pathPrefix="/push-bind" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="https"
+                    android:host="aurorasecurity.app"
+                    android:pathPrefix="/app" />
             </intent-filter>
         </activity>
         <service

@@ -16,8 +16,14 @@ class AuroraFirebaseMessagingService : FirebaseMessagingService() {
         if (!settings.usePush || token.isBlank()) return
 
         serviceScope.launch {
-            PushBackendApi().registerDevice(
+            val authenticatedSettings = BackendDeviceTokenManager.ensureRegistered(
+                context = applicationContext,
                 settings = settings,
+            )
+            if (preferences.getBackendDeviceToken().isBlank()) return@launch
+
+            PushBackendApi().registerDevice(
+                settings = authenticatedSettings,
                 userId = preferences.getUserId(),
                 fcmToken = token,
             )
@@ -36,6 +42,9 @@ class AuroraFirebaseMessagingService : FirebaseMessagingService() {
         val sourceUserId = message.data["ownerUserId"].orEmpty()
         val messageType = message.data["messageType"]?.ifBlank { null }
             ?: if (title.equals("AI Analysis Result", ignoreCase = true)) "ai_analysis" else "sos"
+        val audioUrl = message.data["audioUrl"].orEmpty()
+        val sosMessage = message.data["sosMessage"].orEmpty()
+        val sosDetails = message.data.toAlertMessageDetailsOrNull()
 
         serviceScope.launch {
             HistoryManager(applicationContext).upsertIncomingPushRecord(
@@ -44,9 +53,50 @@ class AuroraFirebaseMessagingService : FirebaseMessagingService() {
                 messageType = messageType,
                 title = title,
                 message = body,
+                sosMessage = sosMessage,
+                sosDetails = sosDetails,
+                audioUrl = audioUrl,
             )
         }
 
-        PushNotificationHelper.showEmergencyAlert(this, title, body)
+        PushNotificationHelper.showEmergencyAlert(
+            context = this,
+            title = title,
+            body = body,
+            eventId = eventId,
+            messageType = messageType,
+        )
+    }
+
+    private fun Map<String, String>.toAlertMessageDetailsOrNull(): AlertMessageDetails? {
+        val date = this["sosDate"].orEmpty()
+        val time = this["sosTime"].orEmpty()
+        val deviceName = this["sosDeviceName"].orEmpty()
+        val mobileNumber = this["sosMobileNumber"].orEmpty()
+        val currentSoundLevel = this["sosCurrentSoundLevel"].orEmpty()
+        val locationLabel = this["sosLocationLabel"].orEmpty()
+        val locationLink = this["sosLocationLink"].orEmpty()
+
+        if (
+            date.isBlank() &&
+            time.isBlank() &&
+            deviceName.isBlank() &&
+            mobileNumber.isBlank() &&
+            currentSoundLevel.isBlank() &&
+            locationLabel.isBlank() &&
+            locationLink.isBlank()
+        ) {
+            return null
+        }
+
+        return AlertMessageDetails(
+            date = date,
+            time = time,
+            deviceName = deviceName,
+            mobileNumber = mobileNumber,
+            currentSoundLevel = currentSoundLevel,
+            locationLabel = locationLabel,
+            locationLink = locationLink,
+        )
     }
 }

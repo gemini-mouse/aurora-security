@@ -6,16 +6,15 @@ import android.media.MediaRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.log10
-import kotlin.math.pow
-import kotlin.math.sqrt
 
 class NoiseMonitor {
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var monitorJob: Job? = null
     private var audioRecord: AudioRecord? = null
 
@@ -25,7 +24,7 @@ class NoiseMonitor {
     ) {
         if (monitorJob?.isActive == true) return
 
-        // Align microphone capture with Gemma 4 audio guidance: mono, 16 kHz, 32 ms frames.
+        // Capture mono 16 kHz PCM in 512 ms frames to reduce wakeups while preserving continuous audio.
         val sampleRate = SAMPLE_RATE_HZ
         val minBufferSize = AudioRecord.getMinBufferSize(
             sampleRate,
@@ -54,10 +53,15 @@ class NoiseMonitor {
         monitorJob = scope.launch {
             val buffer = ShortArray(FRAME_SAMPLES)
             while (isActive) {
-                val read = recorder.read(buffer, 0, buffer.size)
+                val read = try {
+                    recorder.read(buffer, 0, buffer.size)
+                } catch (_: IllegalStateException) {
+                    break
+                }
                 if (read > 0) {
                     onPcmFrame?.invoke(buffer, read)
                     val db = calculateDb(buffer, read)
+                    if (!isActive) break
                     withContext(Dispatchers.Main) {
                         onLevelChanged(db)
                     }
@@ -69,38 +73,40 @@ class NoiseMonitor {
     fun stop() {
         val activeJob = monitorJob
         monitorJob = null
-        if (activeJob != null) {
-            scope.launch {
-                activeJob.cancelAndJoin()
-                releaseRecorder()
-            }
-        } else {
-            releaseRecorder()
-        }
+        activeJob?.cancel()
+        releaseRecorder()
+    }
+
+    fun close() {
+        stop()
+        scope.cancel()
     }
 
     private fun releaseRecorder() {
-        audioRecord?.runCatching {
+        val recorder = audioRecord ?: return
+        audioRecord = null
+        recorder.runCatching {
             if (recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                 stop()
             }
         }
-        audioRecord?.release()
-        audioRecord = null
+        recorder.release()
     }
 
     private fun calculateDb(buffer: ShortArray, read: Int): Float {
-        var sum = 0.0
+        var sumSquares = 0L
         for (index in 0 until read) {
-            sum += buffer[index].toDouble().pow(2.0)
+            val sample = buffer[index].toLong()
+            sumSquares += sample * sample
         }
-        val rms = sqrt(sum / read).coerceAtLeast(1.0)
-        val normalizedDb = 20 * log10(rms / Short.MAX_VALUE)
-        return (normalizedDb + 90).toFloat().coerceIn(0f, 120f)
+        val meanSquare = (sumSquares.toDouble() / read).coerceAtLeast(1.0)
+        val db = 10.0 * log10(meanSquare) + DB_OFFSET
+        return db.toFloat().coerceIn(0f, 120f)
     }
 
     companion object {
         private const val SAMPLE_RATE_HZ = 16_000
-        private const val FRAME_SAMPLES = 512 // 32 ms at 16 kHz
+        private const val FRAME_SAMPLES = 8_192 // 512 ms at 16 kHz
+        private val DB_OFFSET = 90.0 - 20.0 * log10(Short.MAX_VALUE.toDouble())
     }
 }

@@ -70,6 +70,37 @@ internal fun loadPushContactsFromPreferences(
     }
 }
 
+internal fun saveLineContactsToPreferences(
+    preferences: SharedPreferences,
+    key: String,
+    contacts: List<LineContact>,
+) {
+    val array = JSONArray()
+    contacts.forEach { contact ->
+        array.put(
+            JSONObject().apply {
+                put("id", contact.id)
+                put("name", contact.name)
+                put("status", contact.status.name)
+            },
+        )
+    }
+    preferences.edit().putString(key, array.toString()).apply()
+}
+
+internal fun loadLineContactsFromPreferences(
+    preferences: SharedPreferences,
+    key: String,
+): List<LineContact> {
+    return preferences.readJsonList(key) { item ->
+        LineContact(
+            id = item.getString("id"),
+            name = item.optString("name"),
+            status = item.optString("status").toBindingStatusOrPending(),
+        )
+    }
+}
+
 internal fun savePendingAlertToPreferences(
     preferences: SharedPreferences,
     key: String,
@@ -114,6 +145,12 @@ internal fun savePendingAudioToPreferences(
             put("filePath", payload.filePath)
             put("filename", payload.filename)
             put("caption", payload.caption)
+            put("sendToTelegram", payload.sendToTelegram)
+            put("sendToLine", payload.sendToLine)
+            put("sendToPush", payload.sendToPush)
+            put("pushEventId", payload.pushEventId)
+            put("pushTitle", payload.pushTitle)
+            put("pushMessage", payload.pushMessage)
         },
     )
 }
@@ -130,6 +167,12 @@ internal fun loadPendingAudiosFromPreferences(
             filePath = item.optString("filePath"),
             filename = item.optString("filename"),
             caption = item.optString("caption"),
+            sendToTelegram = item.optBoolean("sendToTelegram", true),
+            sendToLine = item.optBoolean("sendToLine", false),
+            sendToPush = item.optBoolean("sendToPush", false),
+            pushEventId = item.optString("pushEventId"),
+            pushTitle = item.optString("pushTitle"),
+            pushMessage = item.optString("pushMessage"),
         )
     }
 }
@@ -221,6 +264,14 @@ internal fun savePendingPushAlertToPreferences(
             put("messageType", payload.messageType)
             put("title", payload.title)
             put("message", payload.message)
+            put("sosMessage", payload.sosMessage)
+            put("sosDate", payload.sosDate)
+            put("sosTime", payload.sosTime)
+            put("sosDeviceName", payload.sosDeviceName)
+            put("sosMobileNumber", payload.sosMobileNumber)
+            put("sosCurrentSoundLevel", payload.sosCurrentSoundLevel)
+            put("sosLocationLabel", payload.sosLocationLabel)
+            put("sosLocationLink", payload.sosLocationLink)
         },
     )
 }
@@ -238,6 +289,80 @@ internal fun loadPendingPushAlertsFromPreferences(
             messageType = item.optString("messageType", "sos"),
             title = item.optString("title"),
             message = item.optString("message"),
+            sosMessage = item.optString("sosMessage"),
+            sosDate = item.optString("sosDate"),
+            sosTime = item.optString("sosTime"),
+            sosDeviceName = item.optString("sosDeviceName"),
+            sosMobileNumber = item.optString("sosMobileNumber"),
+            sosCurrentSoundLevel = item.optString("sosCurrentSoundLevel"),
+            sosLocationLabel = item.optString("sosLocationLabel"),
+            sosLocationLink = item.optString("sosLocationLink"),
+        )
+    }
+}
+
+internal fun savePendingLineAlertToPreferences(
+    preferences: SharedPreferences,
+    key: String,
+    payload: PendingLineAlertPayload,
+) {
+    preferences.appendJsonObject(
+        key = key,
+        item = JSONObject().apply {
+            put("userId", payload.userId)
+            put("apiUrl", payload.apiUrl)
+            put("apiToken", payload.apiToken)
+            put("message", payload.message)
+        },
+    )
+}
+
+internal fun loadPendingLineAlertsFromPreferences(
+    preferences: SharedPreferences,
+    key: String,
+): List<PendingLineAlertPayload> {
+    return preferences.readJsonList(key) { item ->
+        PendingLineAlertPayload(
+            userId = item.optString("userId"),
+            apiUrl = item.optString("apiUrl"),
+            apiToken = item.optString("apiToken"),
+            message = item.optString("message"),
+        )
+    }
+}
+
+internal fun savePendingLineAudioAnalysisToPreferences(
+    preferences: SharedPreferences,
+    key: String,
+    payload: PendingLineAudioAnalysisPayload,
+) {
+    preferences.appendJsonObject(
+        key = key,
+        item = JSONObject().apply {
+            put("userId", payload.userId)
+            put("apiUrl", payload.apiUrl)
+            put("apiToken", payload.apiToken)
+            put("filePath", payload.filePath)
+            put("filename", payload.filename)
+            put("caption", payload.caption)
+            put("analysisText", payload.analysisText)
+        },
+    )
+}
+
+internal fun loadPendingLineAudioAnalysesFromPreferences(
+    preferences: SharedPreferences,
+    key: String,
+): List<PendingLineAudioAnalysisPayload> {
+    return preferences.readJsonList(key) { item ->
+        PendingLineAudioAnalysisPayload(
+            userId = item.optString("userId"),
+            apiUrl = item.optString("apiUrl"),
+            apiToken = item.optString("apiToken"),
+            filePath = item.optString("filePath"),
+            filename = item.optString("filename"),
+            caption = item.optString("caption"),
+            analysisText = item.optString("analysisText"),
         )
     }
 }

@@ -17,8 +17,14 @@ object PushRegistrationManager {
         val token = awaitFirebaseToken()
             ?: return Result.failure(IllegalStateException("Unable to get FCM token."))
 
-        val userId = AlarmPreferences(context).getUserId()
-        val registered = backendApi.registerDevice(settings, userId, token)
+        val preferences = AlarmPreferences(context)
+        val userId = preferences.getUserId()
+        val authenticatedSettings = BackendDeviceTokenManager.ensureRegistered(context, settings)
+        if (preferences.getBackendDeviceToken().isBlank()) {
+            return Result.failure(IllegalStateException("Backend authorization is not configured."))
+        }
+
+        val registered = backendApi.registerDevice(authenticatedSettings, userId, token)
         return if (registered) {
             Result.success(token)
         } else {

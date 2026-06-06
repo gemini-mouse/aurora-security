@@ -61,6 +61,10 @@ internal enum class ContactSetupType(
     @param:StringRes val titleRes: Int,
     @param:StringRes val bodyRes: Int,
 ) {
+    Line(
+        titleRes = R.string.quick_setup_contact_line_title,
+        bodyRes = R.string.quick_setup_contact_line_body,
+    ),
     Push(
         titleRes = R.string.quick_setup_contact_push_title,
         bodyRes = R.string.quick_setup_contact_push_body,

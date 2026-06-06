@@ -1,10 +1,15 @@
 package app.aurorasecurity.security
 
 import android.os.SystemClock
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
+import kotlin.math.sqrt
 
 data class NoiseAlarmUiState(
     val currentDb: Float = 0f,
@@ -39,10 +44,15 @@ enum class EmergencyTriggerSource {
 object NoiseAlarmController {
     private val _uiState = MutableStateFlow(NoiseAlarmUiState())
     val uiState: StateFlow<NoiseAlarmUiState> = _uiState.asStateFlow()
+    private val _alertDeliveryResults = MutableSharedFlow<AlertDeliverySummary>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    internal val alertDeliveryResults: SharedFlow<AlertDeliverySummary> = _alertDeliveryResults.asSharedFlow()
     private var latestDetectedDb: Float = 0f
     private var lastUiDbUpdateAtMs: Long = 0L
     private var lastUiGUpdateAtMs: Long = 0L
-    private var currentPeakG: Float = 0f
+    private var currentPeakMagnitudeSquared: Float = 0f
     private var currentPeakDb: Float = 0f
 
     fun setMicPermission(granted: Boolean) {
@@ -73,17 +83,16 @@ object NoiseAlarmController {
 
     fun setThreshold(value: Float) {
         _uiState.update { current ->
-            val silenced = if (latestDetectedDb < value) false else current.isSilenced
-            val soundThresholdExceeded = current.hasMicPermission && current.isMonitoring && !silenced && latestDetectedDb >= value
-            val thresholdExceeded = if (current.useShakeDetection) {
-                soundThresholdExceeded && current.isShaking
-            } else {
-                soundThresholdExceeded
-            }
+            val thresholdState = current.evaluateThresholdState(
+                detectedDb = latestDetectedDb,
+                thresholdDb = value,
+                isShaking = current.isShaking,
+                canResetSilence = true,
+            )
             current.copy(
                 thresholdDb = value,
-                isSilenced = silenced,
-                isThresholdExceeded = thresholdExceeded,
+                isSilenced = thresholdState.isSilenced,
+                isThresholdExceeded = thresholdState.isThresholdExceeded,
             )
         }
     }
@@ -102,16 +111,17 @@ object NoiseAlarmController {
         currentPeakDb = maxOf(currentPeakDb, db)
         val now = SystemClock.elapsedRealtime()
         _uiState.update { current ->
-            val silenced = if (db < current.thresholdDb) false else current.isSilenced
-            val soundThresholdExceeded = current.hasMicPermission && current.isMonitoring && !silenced && latestDetectedDb >= current.thresholdDb
-            val thresholdExceeded = if (current.useShakeDetection) {
-                soundThresholdExceeded && current.isShaking
-            } else {
-                soundThresholdExceeded
-            }
+            val thresholdState = current.evaluateThresholdState(
+                detectedDb = db,
+                thresholdDb = current.thresholdDb,
+                isShaking = current.isShaking,
+                canResetSilence = true,
+            )
             
             val timeUpdate = now - lastUiDbUpdateAtMs >= UI_DB_UPDATE_INTERVAL_MS
-            val stateUpdate = thresholdExceeded != current.isThresholdExceeded || silenced != current.isSilenced
+            val stateUpdate =
+                thresholdState.isThresholdExceeded != current.isThresholdExceeded ||
+                    thresholdState.isSilenced != current.isSilenced
             
             val displayDb = if (timeUpdate) {
                 val peak = currentPeakDb
@@ -126,28 +136,33 @@ object NoiseAlarmController {
 
             current.copy(
                 currentDb = displayDb,
-                isSilenced = silenced,
-                isThresholdExceeded = thresholdExceeded,
+                isSilenced = thresholdState.isSilenced,
+                isThresholdExceeded = thresholdState.isThresholdExceeded,
             )
         }
     }
 
     fun updateShakeLevel(gForce: Float, isShaking: Boolean) {
+        val magnitude = gForce * GRAVITY_MPS2
+        updateShakeMagnitudeSquared(magnitude * magnitude, isShaking)
+    }
+
+    fun updateShakeMagnitudeSquared(magnitudeSquared: Float, isShaking: Boolean) {
         val now = SystemClock.elapsedRealtime()
-        currentPeakG = maxOf(currentPeakG, gForce)
+        currentPeakMagnitudeSquared = maxOf(currentPeakMagnitudeSquared, magnitudeSquared.coerceAtLeast(0f))
 
         _uiState.update { current ->
-            val soundThresholdExceeded = current.hasMicPermission && current.isMonitoring && !current.isSilenced && latestDetectedDb >= current.thresholdDb
-            val thresholdExceeded = if (current.useShakeDetection) {
-                soundThresholdExceeded && isShaking
-            } else {
-                soundThresholdExceeded
-            }
+            val thresholdState = current.evaluateThresholdState(
+                detectedDb = latestDetectedDb,
+                thresholdDb = current.thresholdDb,
+                isShaking = isShaking,
+                canResetSilence = false,
+            )
             
             val shouldUpdateDisplayedG = now - lastUiGUpdateAtMs >= UI_G_UPDATE_INTERVAL_MS
             val displayG = if (shouldUpdateDisplayedG) {
-                val peak = currentPeakG
-                currentPeakG = 0f
+                val peak = sqrt(currentPeakMagnitudeSquared.toDouble()).toFloat() / GRAVITY_MPS2
+                currentPeakMagnitudeSquared = 0f
                 lastUiGUpdateAtMs = now
                 peak
             } else {
@@ -157,7 +172,7 @@ object NoiseAlarmController {
             current.copy(
                 currentG = displayG,
                 isShaking = isShaking,
-                isThresholdExceeded = thresholdExceeded
+                isThresholdExceeded = thresholdState.isThresholdExceeded
             )
         }
     }
@@ -212,7 +227,44 @@ object NoiseAlarmController {
         }
     }
 
+    internal fun publishAlertDeliveryResult(summary: AlertDeliverySummary) {
+        _alertDeliveryResults.tryEmit(summary)
+    }
+
+    private fun NoiseAlarmUiState.evaluateThresholdState(
+        detectedDb: Float,
+        thresholdDb: Float,
+        isShaking: Boolean,
+        canResetSilence: Boolean,
+    ): ThresholdState {
+        val nextSilenced = if (canResetSilence && detectedDb < thresholdDb) {
+            false
+        } else {
+            isSilenced
+        }
+        val soundThresholdExceeded =
+            hasMicPermission &&
+                isMonitoring &&
+                !nextSilenced &&
+                detectedDb >= thresholdDb
+        val thresholdExceeded = if (useShakeDetection) {
+            soundThresholdExceeded && isShaking
+        } else {
+            soundThresholdExceeded
+        }
+        return ThresholdState(
+            isSilenced = nextSilenced,
+            isThresholdExceeded = thresholdExceeded,
+        )
+    }
+
+    private data class ThresholdState(
+        val isSilenced: Boolean,
+        val isThresholdExceeded: Boolean,
+    )
+
     private const val UI_DB_UPDATE_INTERVAL_MS = 1_000L
     private const val UI_G_UPDATE_INTERVAL_MS = 2_000L
     private const val COUNTDOWN_SECONDS = 3
+    private const val GRAVITY_MPS2 = 9.81f
 }

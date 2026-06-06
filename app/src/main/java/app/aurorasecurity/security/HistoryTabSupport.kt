@@ -77,6 +77,15 @@ internal fun resolvePlayableAudioFile(audioFilePath: String): File? {
     }
 }
 
+internal fun isRemoteAudioUrl(audioReference: String): Boolean {
+    return audioReference.startsWith("https://", ignoreCase = true) ||
+        audioReference.startsWith("http://", ignoreCase = true)
+}
+
+internal fun isPlayableAudioReference(audioReference: String): Boolean {
+    return isRemoteAudioUrl(audioReference) || resolvePlayableAudioFile(audioReference) != null
+}
+
 internal fun releaseMediaPlayer(player: MediaPlayer?): MediaPlayer? {
     runCatching { player?.stop() }
     runCatching { player?.release() }

@@ -2,8 +2,11 @@ package app.aurorasecurity.security
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -56,14 +59,17 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.DirectionsWalk
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AttachMoney
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.DirectionsTransit
-import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.FlashOn
+import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocationOn
@@ -76,6 +82,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material.icons.outlined.VerifiedUser
@@ -167,6 +174,7 @@ import app.aurorasecurity.security.ui.theme.GradientSilentLight1
 import app.aurorasecurity.security.ui.theme.GradientSilentLight2
 import app.aurorasecurity.security.ui.theme.BorderLight
 import app.aurorasecurity.security.ui.theme.Mist
+import app.aurorasecurity.security.ui.theme.MoonMist
 import app.aurorasecurity.security.ui.theme.Paper
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.core.content.ContextCompat
@@ -204,13 +212,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+private const val CRISIS_AUDIO_DIR_NAME = "crisis-audio"
+
 class MainActivity : AppCompatActivity() {
     private var latestIntentState by mutableStateOf<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AlarmPreferences(this)
         super.onCreate(savedInstanceState)
-        latestIntentState = intent
+        latestIntentState = Intent(intent)
         setContent {
             AlarmApp(activityIntent = latestIntentState)
         }
@@ -219,7 +229,7 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        latestIntentState = intent
+        latestIntentState = Intent(intent)
     }
 
     override fun onStart() {
@@ -231,6 +241,22 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
     }
 }
+
+private fun restartApplication(context: Context) {
+    val appContext = context.applicationContext
+    val restartIntent = appContext.packageManager
+        .getLaunchIntentForPackage(appContext.packageName)
+        ?.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        ?: Intent(appContext, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+
+    appContext.startActivity(restartIntent)
+    (context as? Activity)?.finishAffinity()
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AlarmApp(activityIntent: Intent? = null) {
@@ -243,6 +269,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
     var appLanguage by rememberSaveable { mutableStateOf(preferences.getAppLanguageOption()) }
     val backendApi = remember { TelegramBackendApi() }
     val pushBackendApi = remember { PushBackendApi() }
+    val lineBackendApi = remember { LineBackendApi() }
     val locationSnapshotProvider = remember(context) { LocationSnapshotProvider(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -251,15 +278,10 @@ fun AlarmApp(activityIntent: Intent? = null) {
     val latestAlertDeliverySummary = remember(historyRecords) {
         historyRecords.firstNotNullOfOrNull { it.toAlertDeliverySummaryOrNull() }
     }
-    var autoShownAlertResultId by rememberSaveable {
-        mutableStateOf(latestAlertDeliverySummary?.recordId.orEmpty())
-    }
     var selectedAlertResult by remember { mutableStateOf<AlertDeliverySummary?>(null) }
 
-    LaunchedEffect(latestAlertDeliverySummary?.recordId) {
-        val summary = latestAlertDeliverySummary ?: return@LaunchedEffect
-        if (summary.recordId != autoShownAlertResultId) {
-            autoShownAlertResultId = summary.recordId
+    LaunchedEffect(Unit) {
+        NoiseAlarmController.alertDeliveryResults.collect { summary ->
             selectedAlertResult = summary
         }
     }
@@ -283,7 +305,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
     var selectedTab by rememberSaveable { mutableStateOf(AlarmTab.Detect) }
     var requestedHistoryFilterKey by rememberSaveable { mutableStateOf(HISTORY_FILTER_ALL) }
     var requestedHistoryFilterVersion by rememberSaveable { mutableStateOf(0) }
-    var settingsScrollToTopToken by remember { mutableLongStateOf(0L) }
+    var detectScrollToTopToken by remember { mutableLongStateOf(0L) }
     var requestedSettingsSectionKey by rememberSaveable { mutableStateOf("") }
     var requestedSettingsSectionVersion by rememberSaveable { mutableStateOf(0) }
     val swipeTabs = remember { AlarmTab.entries.filter { it != AlarmTab.History } }
@@ -299,16 +321,22 @@ fun AlarmApp(activityIntent: Intent? = null) {
     }
     val aiState by GemmaAudioAnalysisManager.uiState.collectAsState()
     var movementSettings by remember { mutableStateOf(preferences.getMovementSettings()) }
+    var loudSosSound by remember { mutableStateOf(preferences.getLoudSosSound()) }
     val telegramContacts = remember { mutableStateListOf<TelegramContact>() }
     val pushContacts = remember { mutableStateListOf<PushContact>() }
+    val lineContacts = remember { mutableStateListOf<LineContact>() }
     var contactsSyncMessage by rememberSaveable {
         mutableStateOf(context.getString(R.string.contacts_not_synced))
     }
     var pushSyncMessage by rememberSaveable {
         mutableStateOf(context.getString(R.string.push_contacts_not_synced))
     }
+    var lineSyncMessage by rememberSaveable {
+        mutableStateOf(context.getString(R.string.line_contacts_not_synced))
+    }
     var lastSyncTime by rememberSaveable { mutableLongStateOf(0L) }
     var lastPushSyncTime by rememberSaveable { mutableLongStateOf(0L) }
+    var lastLineSyncTime by rememberSaveable { mutableLongStateOf(0L) }
     var trustedPushBindCode by rememberSaveable { mutableStateOf("") }
     var hasLocationPermission by rememberSaveable { mutableStateOf(locationSnapshotProvider.hasLocationPermission()) }
     var isMonitoringPaused by rememberSaveable { mutableStateOf(preferences.getMonitoringPaused()) }
@@ -345,7 +373,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
     val isTraditionalChineseUi = configuration.locales[0]?.language.equals("zh", ignoreCase = true)
 
     fun hasAnyContactMethodEnabled(settings: AlertContactSettings): Boolean {
-        return settings.useTelegram || settings.usePush || settings.usePhoneCall || settings.useSms
+        return settings.useLine || settings.useTelegram || settings.usePush || settings.usePhoneCall || settings.useSms
     }
 
     val contactMethodMessage = if (hasAnyContactMethodEnabled(contactSettings)) {
@@ -374,6 +402,11 @@ fun AlarmApp(activityIntent: Intent? = null) {
             pushContacts.any { it.status == TelegramBindingStatus.Bound }
     }
 
+    fun isLineContactReady(): Boolean {
+        return contactSettings.useLine &&
+            lineContacts.any { it.status == TelegramBindingStatus.Bound }
+    }
+
     fun isTelegramContactReady(): Boolean {
         return contactSettings.useTelegram &&
             telegramContacts.any { it.status == TelegramBindingStatus.Bound }
@@ -388,10 +421,20 @@ fun AlarmApp(activityIntent: Intent? = null) {
     fun isPhoneCallContactReady(): Boolean {
         return contactSettings.usePhoneCall &&
             hasCallPermission &&
-            contactSettings.emergencyPhoneNumber.isNotBlank()
+            contactSettings.phoneCallPhoneNumber.isNotBlank()
     }
 
     val quickSetupContactStatuses = listOf(
+        ContactSetupStatus(
+            type = ContactSetupType.Line,
+            isRecommended = true,
+            isReady = isLineContactReady(),
+            summary = when {
+                isLineContactReady() -> context.getString(R.string.quick_setup_status_ready)
+                !contactSettings.useLine -> context.getString(R.string.common_off)
+                else -> context.getString(R.string.quick_setup_status_required)
+            },
+        ),
         ContactSetupStatus(
             type = ContactSetupType.Telegram,
             isRecommended = false,
@@ -399,6 +442,16 @@ fun AlarmApp(activityIntent: Intent? = null) {
             summary = when {
                 isTelegramContactReady() -> context.getString(R.string.quick_setup_status_ready)
                 !contactSettings.useTelegram -> context.getString(R.string.common_off)
+                else -> context.getString(R.string.quick_setup_status_required)
+            },
+        ),
+        ContactSetupStatus(
+            type = ContactSetupType.Push,
+            isRecommended = false,
+            isReady = isPushContactReady(),
+            summary = when {
+                isPushContactReady() -> context.getString(R.string.quick_setup_status_ready)
+                !contactSettings.usePush -> context.getString(R.string.common_off)
                 else -> context.getString(R.string.quick_setup_status_required)
             },
         ),
@@ -424,16 +477,6 @@ fun AlarmApp(activityIntent: Intent? = null) {
                 else -> context.getString(R.string.quick_setup_status_number)
             },
         ),
-        ContactSetupStatus(
-            type = ContactSetupType.Push,
-            isRecommended = false,
-            isReady = isPushContactReady(),
-            summary = when {
-                isPushContactReady() -> context.getString(R.string.quick_setup_status_ready)
-                !contactSettings.usePush -> context.getString(R.string.common_off)
-                else -> context.getString(R.string.quick_setup_status_required)
-            },
-        ),
     )
 
     fun isQuickSetupContactsReady(): Boolean {
@@ -452,6 +495,19 @@ fun AlarmApp(activityIntent: Intent? = null) {
         if (updatedSettings == contactSettings) return
         contactSettings = updatedSettings
         preferences.saveAlertContactSettings(updatedSettings)
+    }
+
+    suspend fun getAuthenticatedContactSettings(): AlertContactSettings? {
+        val authenticatedSettings = BackendDeviceTokenManager.ensureRegistered(
+            context = context,
+            settings = contactSettings,
+        )
+        return if (preferences.getBackendDeviceToken().isNotBlank()) {
+            contactSettings = authenticatedSettings
+            authenticatedSettings
+        } else {
+            null
+        }
     }
 
     fun updateAiSettings(updatedSettings: AiSettings, prepareEngine: Boolean = false) {
@@ -482,7 +538,19 @@ fun AlarmApp(activityIntent: Intent? = null) {
         }
         if (persist && updatedSettings != preferences.getMovementSettings()) {
             preferences.saveMovementSettings(updatedSettings)
+            if (uiState.isMonitoring) {
+                context.startService(
+                    Intent(context, NoiseAlarmService::class.java)
+                        .setAction(NoiseAlarmService.ACTION_REFRESH_MOVEMENT_SETTINGS),
+                )
+            }
         }
+    }
+
+    fun updateLoudSosSound(sound: LoudSosSound) {
+        if (sound == loudSosSound) return
+        loudSosSound = sound
+        preferences.saveLoudSosSound(sound)
     }
 
     fun updateThreshold(updatedThreshold: Float, persist: Boolean = true) {
@@ -507,8 +575,8 @@ fun AlarmApp(activityIntent: Intent? = null) {
     }
 
     fun navigateToTab(tab: AlarmTab) {
-        if (tab == AlarmTab.Settings) {
-            settingsScrollToTopToken++
+        if (tab == AlarmTab.Detect) {
+            detectScrollToTopToken++
         }
         selectedTab = tab
         if (tab == AlarmTab.History) return
@@ -541,9 +609,26 @@ fun AlarmApp(activityIntent: Intent? = null) {
             return@LaunchedEffect
         }
 
-        if (activityIntent?.getBooleanExtra(PushNotificationHelper.EXTRA_OPEN_HISTORY, false) == true) {
-            requestedHistoryFilterKey = activityIntent.getStringExtra(PushNotificationHelper.EXTRA_HISTORY_FILTER)
-                ?: PushNotificationHelper.HISTORY_FILTER_INCOMING
+        when (extractAppDeepLinkDestination(activityIntent?.data)) {
+            AppDeepLinkDestination.AI -> {
+                navigateToTab(AlarmTab.AI)
+                return@LaunchedEffect
+            }
+            AppDeepLinkDestination.History -> {
+                requestedHistoryFilterKey = HISTORY_FILTER_ALL
+                requestedHistoryFilterVersion += 1
+                navigateToTab(AlarmTab.History)
+                return@LaunchedEffect
+            }
+            AppDeepLinkDestination.Settings -> {
+                navigateToTab(AlarmTab.Settings)
+                return@LaunchedEffect
+            }
+            null -> Unit
+        }
+
+        if (PushNotificationHelper.shouldOpenIncomingHistory(activityIntent)) {
+            requestedHistoryFilterKey = PushNotificationHelper.historyFilterFromIntent(activityIntent)
             requestedHistoryFilterVersion += 1
             selectedTab = AlarmTab.History
         }
@@ -732,14 +817,17 @@ fun AlarmApp(activityIntent: Intent? = null) {
             val currentTime = System.currentTimeMillis()
             val elapsedSeconds = (currentTime - lastSyncTime) / 1000
             if (elapsedSeconds >= 30) {
-                if (contactsSyncMessage.startsWith("Please wait") || contactsSyncMessage == "Syncing...") {
-                    contactsSyncMessage = "Sync complete. (Ready)"
+                if (
+                    contactsSyncMessage.startsWith(context.getString(R.string.sync_wait_prefix)) ||
+                    contactsSyncMessage == context.getString(R.string.telegram_sync_in_progress)
+                ) {
+                    contactsSyncMessage = context.getString(R.string.sync_complete_ready)
                 }
                 break
             } else {
-                if (contactsSyncMessage.startsWith("Please wait")) {
+                if (contactsSyncMessage.startsWith(context.getString(R.string.sync_wait_prefix))) {
                     val waitTime = 30 - elapsedSeconds
-                    contactsSyncMessage = "Please wait ${waitTime}s before syncing again."
+                    contactsSyncMessage = context.getString(R.string.sync_wait_seconds, waitTime)
                 }
             }
             delay(1000)
@@ -753,8 +841,8 @@ fun AlarmApp(activityIntent: Intent? = null) {
             val elapsedSeconds = (currentTime - lastPushSyncTime) / 1000
             if (elapsedSeconds >= 15) {
                 if (
-                    pushSyncMessage.startsWith("Please wait") ||
-                    pushSyncMessage == "Syncing push contacts..."
+                    pushSyncMessage.startsWith(context.getString(R.string.sync_wait_prefix)) ||
+                    pushSyncMessage == context.getString(R.string.push_sync_in_progress)
                 ) {
                     pushSyncMessage = if (pushContacts.isEmpty()) {
                         context.getString(R.string.no_push_contacts)
@@ -763,9 +851,34 @@ fun AlarmApp(activityIntent: Intent? = null) {
                     }
                 }
                 break
-            } else if (pushSyncMessage.startsWith("Please wait")) {
+            } else if (pushSyncMessage.startsWith(context.getString(R.string.sync_wait_prefix))) {
                 val waitTime = 15 - elapsedSeconds
-                pushSyncMessage = "Please wait ${waitTime}s before syncing again."
+                pushSyncMessage = context.getString(R.string.sync_wait_seconds, waitTime)
+            }
+            delay(1000)
+        }
+    }
+
+    LaunchedEffect(lastLineSyncTime) {
+        if (lastLineSyncTime == 0L) return@LaunchedEffect
+        while (true) {
+            val currentTime = System.currentTimeMillis()
+            val elapsedSeconds = (currentTime - lastLineSyncTime) / 1000
+            if (elapsedSeconds >= 15) {
+                if (
+                    lineSyncMessage.startsWith(context.getString(R.string.sync_wait_prefix)) ||
+                    lineSyncMessage == context.getString(R.string.line_sync_in_progress)
+                ) {
+                    lineSyncMessage = if (lineContacts.isEmpty()) {
+                        context.getString(R.string.no_line_contacts)
+                    } else {
+                        context.getString(R.string.line_sync_complete)
+                    }
+                }
+                break
+            } else if (lineSyncMessage.startsWith(context.getString(R.string.sync_wait_prefix))) {
+                val waitTime = 15 - elapsedSeconds
+                lineSyncMessage = context.getString(R.string.sync_wait_seconds, waitTime)
             }
             delay(1000)
         }
@@ -793,13 +906,15 @@ fun AlarmApp(activityIntent: Intent? = null) {
         scope.launch {
             contactsSyncMessage = context.getString(R.string.telegram_sync_in_progress)
             try {
+                val authenticatedSettings = getAuthenticatedContactSettings()
+                    ?: throw IllegalStateException(context.getString(R.string.telegram_setup_link_prepare_failed))
                 backendApi.registerUser(
-                    settings = contactSettings,
+                    settings = authenticatedSettings,
                     userId = userId,
                     bindCode = bindCode,
                 )
                 val contacts = backendApi.fetchContacts(
-                    settings = contactSettings,
+                    settings = authenticatedSettings,
                     userId = userId,
                 )
                 telegramContacts.clear()
@@ -850,8 +965,10 @@ fun AlarmApp(activityIntent: Intent? = null) {
             }
 
             try {
+                val authenticatedSettings = getAuthenticatedContactSettings()
+                    ?: throw IllegalStateException(context.getString(R.string.push_register_failed))
                 val contacts = pushBackendApi.fetchContacts(
-                    settings = contactSettings,
+                    settings = authenticatedSettings,
                     userId = userId,
                 )
                 pushContacts.clear()
@@ -869,6 +986,54 @@ fun AlarmApp(activityIntent: Intent? = null) {
         }
     }
 
+    fun syncLineContacts() {
+        if (!contactSettings.useLine) {
+            lineContacts.clear()
+            lineSyncMessage = context.getString(R.string.line_sync_disabled)
+            return
+        }
+        if (contactSettings.apiUrl.isBlank()) {
+            lineSyncMessage = context.getString(R.string.backend_api_url_required)
+            return
+        }
+
+        val currentTime = System.currentTimeMillis()
+        val elapsedSeconds = (currentTime - lastLineSyncTime) / 1000
+        if (elapsedSeconds < 15) {
+            val waitTime = 15 - elapsedSeconds
+            lineSyncMessage = context.getString(R.string.sync_wait_seconds, waitTime)
+            return
+        }
+
+        scope.launch {
+            lineSyncMessage = context.getString(R.string.line_sync_in_progress)
+            try {
+                val authenticatedSettings = getAuthenticatedContactSettings()
+                    ?: throw IllegalStateException(context.getString(R.string.line_setup_link_prepare_failed))
+                lineBackendApi.registerUser(
+                    settings = authenticatedSettings,
+                    userId = userId,
+                    bindCode = bindCode,
+                )
+                val contacts = lineBackendApi.fetchContacts(
+                    settings = authenticatedSettings,
+                    userId = userId,
+                )
+                lineContacts.clear()
+                lineContacts.addAll(contacts)
+                preferences.saveLineContacts(contacts.toList())
+                lastLineSyncTime = System.currentTimeMillis()
+                lineSyncMessage = if (contacts.isEmpty()) {
+                    context.getString(R.string.no_line_contacts)
+                } else {
+                    context.getString(R.string.line_sync_complete)
+                }
+            } catch (e: Exception) {
+                lineSyncMessage = context.getString(R.string.line_sync_failed_with_reason, e.message ?: "")
+            }
+        }
+    }
+
     fun prepareTelegramSetupLink(onPrepared: () -> Unit) {
         if (!contactSettings.useTelegram) {
             contactsSyncMessage = context.getString(R.string.telegram_enable_before_share)
@@ -881,17 +1046,62 @@ fun AlarmApp(activityIntent: Intent? = null) {
 
         preferences.saveAlertContactSettings(contactSettings)
         contactsSyncMessage = context.getString(R.string.telegram_setup_link_preparing)
+        onPrepared()
         scope.launch {
             try {
-                backendApi.registerUser(
-                    settings = contactSettings,
-                    userId = userId,
-                    bindCode = bindCode,
-                )
+                getAuthenticatedContactSettings()
+                    ?: throw IllegalStateException(context.getString(R.string.telegram_setup_link_prepare_failed))
                 contactsSyncMessage = context.getString(R.string.telegram_setup_link_ready)
-                onPrepared()
             } catch (e: Exception) {
                 contactsSyncMessage = context.getString(R.string.telegram_setup_link_prepare_failed)
+            }
+        }
+    }
+
+    fun prepareLineSetupLink(onPrepared: () -> Unit) {
+        if (!contactSettings.useLine) {
+            lineSyncMessage = context.getString(R.string.line_enable_before_share)
+            return
+        }
+        if (contactSettings.apiUrl.isBlank()) {
+            lineSyncMessage = context.getString(R.string.backend_api_url_required)
+            return
+        }
+
+        preferences.saveAlertContactSettings(contactSettings)
+        lineSyncMessage = context.getString(R.string.line_setup_link_preparing)
+        onPrepared()
+        scope.launch {
+            try {
+                getAuthenticatedContactSettings()
+                    ?: throw IllegalStateException(context.getString(R.string.line_setup_link_prepare_failed))
+                lineSyncMessage = context.getString(R.string.line_setup_link_ready)
+            } catch (e: Exception) {
+                lineSyncMessage = context.getString(R.string.line_setup_link_prepare_failed)
+            }
+        }
+    }
+
+    fun preparePushSetupLink(onPrepared: () -> Unit) {
+        if (!contactSettings.usePush) {
+            pushSyncMessage = context.getString(R.string.push_enable_before_bind)
+            return
+        }
+        if (contactSettings.apiUrl.isBlank()) {
+            pushSyncMessage = context.getString(R.string.backend_api_url_required)
+            return
+        }
+
+        preferences.saveAlertContactSettings(contactSettings)
+        pushSyncMessage = context.getString(R.string.telegram_setup_link_preparing)
+        onPrepared()
+        scope.launch {
+            try {
+                getAuthenticatedContactSettings()
+                    ?: throw IllegalStateException(context.getString(R.string.push_register_failed))
+                pushSyncMessage = context.getString(R.string.telegram_setup_link_ready)
+            } catch (e: Exception) {
+                pushSyncMessage = context.getString(R.string.push_register_failed)
             }
         }
     }
@@ -902,8 +1112,13 @@ fun AlarmApp(activityIntent: Intent? = null) {
                 R.string.removing_contact_with_name,
                 contact.name.ifBlank { context.getString(R.string.contact_fallback_name) },
             )
+            val authenticatedSettings = getAuthenticatedContactSettings()
+            if (authenticatedSettings == null) {
+                contactsSyncMessage = context.getString(R.string.contact_remove_failed)
+                return@launch
+            }
             val deleted = backendApi.deleteContact(
-                settings = contactSettings,
+                settings = authenticatedSettings,
                 userId = userId,
                 contactId = contact.id,
             )
@@ -913,6 +1128,32 @@ fun AlarmApp(activityIntent: Intent? = null) {
                 contactsSyncMessage = context.getString(R.string.contact_removed)
             } else {
                 contactsSyncMessage = context.getString(R.string.contact_remove_failed)
+            }
+        }
+    }
+
+    fun deleteLineContact(contact: LineContact) {
+        scope.launch {
+            lineSyncMessage = context.getString(
+                R.string.removing_contact_with_name,
+                contact.name.ifBlank { context.getString(R.string.line_contact_fallback_name) },
+            )
+            val authenticatedSettings = getAuthenticatedContactSettings()
+            if (authenticatedSettings == null) {
+                lineSyncMessage = context.getString(R.string.line_contact_remove_failed)
+                return@launch
+            }
+            val deleted = lineBackendApi.deleteContact(
+                settings = authenticatedSettings,
+                userId = userId,
+                contactId = contact.id,
+            )
+            if (deleted) {
+                lineContacts.removeAll { it.id == contact.id }
+                preferences.saveLineContacts(lineContacts.toList())
+                lineSyncMessage = context.getString(R.string.line_contact_removed)
+            } else {
+                lineSyncMessage = context.getString(R.string.line_contact_remove_failed)
             }
         }
     }
@@ -945,8 +1186,14 @@ fun AlarmApp(activityIntent: Intent? = null) {
                 return@launch
             }
 
+            val authenticatedSettings = getAuthenticatedContactSettings()
+            if (authenticatedSettings == null) {
+                pushSyncMessage = context.getString(R.string.push_binding_failed)
+                return@launch
+            }
+
             val bound = pushBackendApi.bindCurrentDevice(
-                settings = contactSettings,
+                settings = authenticatedSettings,
                 bindCode = bindCodeInput,
                 contactUserId = userId,
             )
@@ -965,8 +1212,13 @@ fun AlarmApp(activityIntent: Intent? = null) {
                 R.string.removing_contact_with_name,
                 contact.name.ifBlank { context.getString(R.string.push_contact_fallback_name) },
             )
+            val authenticatedSettings = getAuthenticatedContactSettings()
+            if (authenticatedSettings == null) {
+                pushSyncMessage = context.getString(R.string.push_contact_remove_failed)
+                return@launch
+            }
             val deleted = pushBackendApi.deleteContact(
-                settings = contactSettings,
+                settings = authenticatedSettings,
                 userId = userId,
                 contactId = contact.id,
             )
@@ -993,6 +1245,12 @@ fun AlarmApp(activityIntent: Intent? = null) {
             pushContacts.clear()
             pushContacts.addAll(cachedPushContacts)
             pushSyncMessage = context.getString(R.string.loaded_from_preferences)
+        }
+        val cachedLineContacts = preferences.getLineContacts()
+        if (cachedLineContacts.isNotEmpty()) {
+            lineContacts.clear()
+            lineContacts.addAll(cachedLineContacts)
+            lineSyncMessage = context.getString(R.string.loaded_from_preferences)
         }
         NoiseAlarmController.setThreshold(preferences.getThresholdDb())
         NoiseAlarmController.setMovementSettings(
@@ -1023,7 +1281,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
     LaunchedEffect(
         aiDeviceSupport.supportsOnDeviceAi,
         aiDeviceSupport.defaultModelType,
-        aiSettings.enableAiAnalysis,
+        aiSettings.isAiEnabled,
         aiSettings.preloadAiInBackground,
         aiSettings.modelType,
     ) {
@@ -1085,7 +1343,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
             // Always refresh file status so the UI shows correct download state.
             // If preload is enabled, prepare the model immediately while the AI tab is open.
             GemmaAudioAnalysisManager.refreshState(context, currentModel)
-            if (aiSettings.preloadAiInBackground) {
+            if (aiSettings.preloadAiInBackground && !isActiveNetworkMetered(context)) {
                 runCatching {
                     GemmaAudioAnalysisManager.downloadIfNeeded(context, currentModel)
                 }
@@ -1095,6 +1353,9 @@ fun AlarmApp(activityIntent: Intent? = null) {
     LaunchedEffect(pagerState.settledPage) {
         if (selectedTab == AlarmTab.History) return@LaunchedEffect
         if (selectedTab != settledSwipeTab) {
+            if (settledSwipeTab == AlarmTab.Detect) {
+                detectScrollToTopToken++
+            }
             selectedTab = settledSwipeTab
         }
     }
@@ -1109,11 +1370,11 @@ fun AlarmApp(activityIntent: Intent? = null) {
     }
     LaunchedEffect(
         uiState.isMonitoring,
-        aiSettings.enableAiAnalysis,
+        aiSettings.isAiEnabled,
         aiSettings.preloadAiInBackground,
         aiSettings.modelType,
     ) {
-        if (uiState.isMonitoring && aiSettings.enableAiAnalysis) {
+        if (uiState.isMonitoring && aiSettings.isAiEnabled && aiSettings.preloadAiInBackground) {
             prepareAiEngineIfNeeded(context, aiSettings)
         }
     }
@@ -1127,7 +1388,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
         uiState.alarmTriggered,
         uiState.activeEmergencyMode,
         contactSettings.usePhoneCall,
-        contactSettings.emergencyPhoneNumber,
+        contactSettings.phoneCallPhoneNumber,
         hasCallPermission,
     ) {
         val shouldTriggerPhoneCall = uiState.alarmTriggered || uiState.activeEmergencyMode != null
@@ -1138,12 +1399,12 @@ fun AlarmApp(activityIntent: Intent? = null) {
         if (
             contactSettings.usePhoneCall &&
             hasCallPermission &&
-            contactSettings.emergencyPhoneNumber.isNotBlank() &&
+            contactSettings.phoneCallPhoneNumber.isNotBlank() &&
             !phoneCallTriggeredForCurrentAlarm
         ) {
             phoneCallTriggeredForCurrentAlarm = true
             runCatching {
-                launchEmergencyCall(context, contactSettings.emergencyPhoneNumber)
+                launchEmergencyCall(context, contactSettings.phoneCallPhoneNumber)
             }
         }
     }
@@ -1190,11 +1451,55 @@ fun AlarmApp(activityIntent: Intent? = null) {
 
     fun openContactSetupFromWizard(type: ContactSetupType) {
         closeQuickSetupForThisSession()
+        updateContactSettings(
+            contactSettings.copy(
+                useLine = type == ContactSetupType.Line,
+                useTelegram = type == ContactSetupType.Telegram,
+                usePush = type == ContactSetupType.Push,
+                useSms = type == ContactSetupType.Sms,
+                usePhoneCall = type == ContactSetupType.PhoneCall,
+            ),
+        )
         when (type) {
-            ContactSetupType.Push -> openSettingsSection(SETTINGS_SECTION_CONTACTS_PUSH)
-            ContactSetupType.Telegram -> openSettingsSection(SETTINGS_SECTION_CONTACTS_TELEGRAM)
-            ContactSetupType.Sms -> openSettingsSection(SETTINGS_SECTION_CONTACTS_SMS)
-            ContactSetupType.PhoneCall -> openSettingsSection(SETTINGS_SECTION_CONTACTS_PHONE)
+            ContactSetupType.Line -> {
+                openSettingsSection(SETTINGS_SECTION_CONTACTS_LINE)
+            }
+            ContactSetupType.Push -> {
+                openSettingsSection(SETTINGS_SECTION_CONTACTS_PUSH)
+            }
+            ContactSetupType.Telegram -> {
+                openSettingsSection(SETTINGS_SECTION_CONTACTS_TELEGRAM)
+            }
+            ContactSetupType.Sms -> {
+                openSettingsSection(SETTINGS_SECTION_CONTACTS_SMS)
+            }
+            ContactSetupType.PhoneCall -> {
+                openSettingsSection(SETTINGS_SECTION_CONTACTS_PHONE)
+            }
+        }
+    }
+
+    fun resetLocalSettingsAndRestart() {
+        scope.launch {
+            val resetResult = runCatching {
+                context.stopService(Intent(context, NoiseAlarmService::class.java))
+                preferences.resetLocalSettings()
+                historyManager.clearAll()
+                withContext(Dispatchers.IO) {
+                    File(context.filesDir, CRISIS_AUDIO_DIR_NAME).deleteRecursively()
+                }
+            }
+
+            if (resetResult.isFailure) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.settings_reset_local_failed),
+                    Toast.LENGTH_LONG,
+                ).show()
+                return@launch
+            }
+
+            restartApplication(context)
         }
     }
 
@@ -1232,7 +1537,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1243,7 +1548,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(36.dp)
                                     .background(
                                         brush = Brush.linearGradient(
                                             colors = listOf(
@@ -1251,7 +1556,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                                 ComposeColor(0xFF31577D),
                                             ),
                                         ),
-                                        shape = RoundedCornerShape(12.dp),
+                                        shape = RoundedCornerShape(11.dp),
                                     ),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -1259,12 +1564,12 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                     imageVector = Icons.Outlined.Security,
                                     contentDescription = null,
                                     tint = ComposeColor.White,
-                                    modifier = Modifier.size(23.dp),
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                             Text(
                                 text = "Aurora",
-                                style = MaterialTheme.typography.displaySmall.copy(fontSize = 27.sp, lineHeight = 29.sp),
+                                style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp, lineHeight = 27.sp),
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isDark) Frost else ComposeColor(0xFF0C2946),
                             )
@@ -1278,7 +1583,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                 selectedTab = AlarmTab.History
                             },
                             modifier = Modifier
-                                .size(52.dp)
+                                .size(48.dp)
                                 .shadow(
                                     elevation = if (isDark) 12.dp else 14.dp,
                                     shape = CircleShape,
@@ -1490,6 +1795,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                 uiState = uiState,
                                 aiSettings = aiSettings,
                                 aiState = aiState,
+                                scrollToTopToken = detectScrollToTopToken,
                                 latestAlertDeliverySummary = latestAlertDeliverySummary,
                                 onOpenAlertDeliverySummary = { selectedAlertResult = it },
                                 hasLocationPermission = hasLocationPermission,
@@ -1552,8 +1858,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                         runCatching {
                                             val shouldRetryEngine =
                                                 aiState.modelStatus == AiModelStatus.Error &&
-                                                    !aiState.statusMessage.startsWith("Model download failed") &&
-                                                    !aiState.statusMessage.startsWith("Downloaded model is too small")
+                                                    aiState.statusMessageKey != AiStatusMessageKey.DownloadFailed
                                             val currentModel = GemmaModelType.fromName(aiSettings.modelType)
                                             if (shouldRetryEngine) {
                                                 GemmaAudioAnalysisManager.retryInitialization(context, currentModel)
@@ -1597,7 +1902,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                             context = context,
                                             samples = pcmSamples,
                                         )
-                                        val testClipFile = File(context.cacheDir, "test_clip.m4a")
+                                        val testClipFile = m4aBytes?.let { File(context.cacheDir, "test_clip.m4a") }
                                         val testClipWavFile = File(context.cacheDir, "test_clip.wav")
 
                                         val testClip = CrisisAudioClip(
@@ -1610,19 +1915,23 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                             wavFile = testClipWavFile,
                                         )
                                         runCatching {
-                                            testClip.file.writeBytes(m4aBytes)
+                                            if (m4aBytes != null && testClipFile != null) {
+                                                testClipFile.writeBytes(m4aBytes)
+                                            }
                                             testClip.wavFile.writeBytes(analysisAudioBytes)
                                             val result = GemmaAudioAnalysisManager.analyzeClip(context, testClip, currentModel)
-                                            val sosText = AlertMessageFormatter.format(
+                                            val alertPayload = AlertMessageFormatter.formatPayload(
                                                 contactSettings,
                                                 uiState.currentDb,
                                                 locationSnapshotProvider.getCurrentLocation(),
                                             )
                                             historyManager.saveRecord(
                                                 isTest = true,
-                                                sosText = sosText,
+                                                sosText = alertPayload.text,
+                                                sosMessage = alertPayload.historyMessage,
+                                                sosDetails = alertPayload.details,
                                                 sourceAudioFile = testClip.file,
-                                                aiResultText = result ?: "No analysis provided",
+                                                aiResultText = result ?: context.getString(R.string.ai_no_analysis_provided),
                                             )
                                         }
 
@@ -1642,11 +1951,14 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                 appLanguage = appLanguage,
                                 bindCode = bindCode,
                                 movementSettings = movementSettings,
+                                loudSosSound = loudSosSound,
                                 currentG = uiState.currentG,
                                 telegramContacts = telegramContacts,
                                 pushContacts = pushContacts,
+                                lineContacts = lineContacts,
                                 contactsSyncMessage = contactsSyncMessage,
                                 pushSyncMessage = pushSyncMessage,
+                                lineSyncMessage = lineSyncMessage,
                                 contactMethodMessage = contactMethodMessage,
                                 trustedPushBindCode = trustedPushBindCode,
                                 hasCallPermission = hasCallPermission,
@@ -1655,9 +1967,12 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                 hasLocationPermission = hasLocationPermission,
                                 hasNotificationPermission = hasNotificationPermission,
                                 hasCompletedQuickSetup = hasCompletedQuickSetup,
-                                scrollToTopToken = settingsScrollToTopToken,
                                 requestedSectionKey = requestedSettingsSectionKey,
                                 requestedSectionVersion = requestedSettingsSectionVersion,
+                                onSettingsSectionRequestHandled = {
+                                    requestedSettingsSectionKey = ""
+                                    requestedSettingsSectionVersion = 0
+                                },
                                 onRequestPermission = { requestPermissionOrOpenSettings(Manifest.permission.RECORD_AUDIO) },
                                 onRequestLocationPermission = { requestPermissionOrOpenSettings(Manifest.permission.ACCESS_FINE_LOCATION) },
                                 onRequestCallPermission = { requestPermissionOrOpenSettings(Manifest.permission.CALL_PHONE) },
@@ -1681,11 +1996,17 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                 onMovementSettingsChange = { updatedSettings ->
                                     updateMovementSettings(updatedSettings)
                                 },
+                                onLoudSosSoundChange = { sound ->
+                                    updateLoudSosSound(sound)
+                                },
                                 onAiSettingsChange = { updatedSettings ->
                                     updateAiSettings(updatedSettings, prepareEngine = true)
                                 },
                                 onContactSettingsChange = { updatedSettings ->
                                     updateContactSettings(updatedSettings)
+                                },
+                                onUseLineChange = { enabled ->
+                                    updateContactSettings(contactSettings.copy(useLine = enabled))
                                 },
                                 onUseTelegramChange = { enabled ->
                                     updateContactSettings(contactSettings.copy(useTelegram = enabled))
@@ -1711,19 +2032,35 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                 onResumeQuickSetup = {
                                     resumeQuickSetupFromSettings()
                                 },
+                                onResetLocalSettings = {
+                                    resetLocalSettingsAndRestart()
+                                },
                                 onSaveAlertProfile = {
                                     if (hasAnyContactMethodEnabled(contactSettings)) {
                                         preferences.saveAlertContactSettings(contactSettings)
-                                        syncContacts()
+                                        if (contactSettings.useLine) {
+                                            syncLineContacts()
+                                        }
+                                        if (contactSettings.useTelegram) {
+                                            syncContacts()
+                                        }
                                         if (contactSettings.usePush) {
                                             syncPushContacts()
                                         }
                                     }
                                 },
                                 onRefreshContacts = { syncContacts() },
+                                onRefreshLineContacts = { syncLineContacts() },
+                                onDeleteLineContact = { deleteLineContact(it) },
+                                onPrepareLineSetupLink = { onPrepared ->
+                                    prepareLineSetupLink(onPrepared)
+                                },
                                 onDeleteTelegramContact = { deleteTelegramContact(it) },
                                 onPrepareTelegramSetupLink = { onPrepared ->
                                     prepareTelegramSetupLink(onPrepared)
+                                },
+                                onPreparePushSetupLink = { onPrepared ->
+                                    preparePushSetupLink(onPrepared)
                                 },
                                 onRefreshPushContacts = { syncPushContacts() },
                                 onDeletePushContact = { deletePushContact(it) },
@@ -1829,7 +2166,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                     }.onFailure {
                         Toast.makeText(
                             context,
-                            "Unable to open Terms of Use.",
+                            context.getString(R.string.terms_open_failed),
                             Toast.LENGTH_LONG,
                         ).show()
                     }
@@ -1850,6 +2187,7 @@ private fun DetectTab(
     uiState: NoiseAlarmUiState,
     aiSettings: AiSettings,
     aiState: AiFeatureUiState,
+    scrollToTopToken: Long,
     latestAlertDeliverySummary: AlertDeliverySummary?,
     onOpenAlertDeliverySummary: (AlertDeliverySummary) -> Unit,
     hasLocationPermission: Boolean,
@@ -1886,6 +2224,12 @@ private fun DetectTab(
     }
     val scrollState = rememberScrollState()
 
+    LaunchedEffect(scrollToTopToken) {
+        if (scrollToTopToken > 0L) {
+            scrollState.scrollTo(0)
+        }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val screenHeight = maxHeight
         // Calculate dynamic heights. If screen is very small, cap min heights.
@@ -1910,6 +2254,7 @@ private fun DetectTab(
                     onNavigateToSettings = onNavigateToSettings,
                 )
             }
+            SectionHeader(title = stringResource(R.string.auto_detection_label))
             HeroCard(
                 modifier = Modifier.height(heroHeight),
                 uiState = uiState,
@@ -1918,11 +2263,13 @@ private fun DetectTab(
                 isMonitoringPaused = isMonitoringPaused,
                 onStopAlarm = onStopAlarm,
             )
+            SectionHeader(title = stringResource(R.string.emergency_label))
             SosActionsCard(
                 modifier = Modifier.height(sosHeight),
                 onTriggerSilentSos = onTriggerSilentSos,
                 onTriggerLoudSos = onTriggerLoudSos,
             )
+            SectionHeader(title = stringResource(R.string.alert_delivery_title))
             latestAlertDeliverySummary?.let { summary ->
                 AlertDeliveryResultCard(
                     summary = summary,
@@ -1942,54 +2289,25 @@ private fun AlertDeliveryResultCard(
     summary: AlertDeliverySummary,
     onClick: () -> Unit,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val cardBackgroundColor = if (isDark) ComposeColor(0xFF101F2C) else ComposeColor(0xFFF4F1EA)
+    val cardBorderColor = if (isDark) ComposeColor(0xFF2C4A60) else ComposeColor(0xFFDDD5CB)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(
-                Brush.verticalGradient(
-                    listOf(
-                        ComposeColor(0xFFFBF7F1),
-                        ComposeColor(0xFFF1EAE2),
-                    ),
-                ),
+                color = cardBackgroundColor,
             )
             .border(
                 width = 1.dp,
-                color = ComposeColor(0xFFD9CEC4).copy(alpha = 0.64f),
+                color = cardBorderColor,
                 shape = RoundedCornerShape(28.dp),
             )
             .clickable { onClick() }
             .padding(horizontal = 18.dp, vertical = 18.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 12.dp),
-                    text = stringResource(R.string.alert_delivery_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = ComposeColor(0xFF102A43),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    modifier = Modifier.widthIn(min = 76.dp),
-                    text = alertDeliveryStatusLabel(summary.sosAlertStatus),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = alertDeliveryStatusColor(summary.sosAlertStatus),
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                )
-            }
             AlertDeliverySteps(summary = summary)
         }
     }
@@ -2069,9 +2387,11 @@ private fun AlertDeliveryStep(
     label: String,
     status: TextAlertDeliveryStatus,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val statusColor = alertDeliveryStatusColor(status)
     val statusBackgroundColor = alertDeliveryStatusBackgroundColor(status)
     val statusBorderColor = alertDeliveryStatusBorderColor(status)
+    val labelColor = if (isDark) Frost else ComposeColor(0xFF102A43)
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2117,7 +2437,7 @@ private fun AlertDeliveryStep(
                     lineHeight = 16.sp,
                 ),
                 fontWeight = FontWeight.SemiBold,
-                color = ComposeColor(0xFF102A43),
+                color = labelColor,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -2199,7 +2519,7 @@ private fun AlertDeliveryDetailRow(
 private fun alertDeliveryStatusColor(status: TextAlertDeliveryStatus): ComposeColor {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return when (status) {
-        TextAlertDeliveryStatus.Sent -> if (isDark) ComposeColor(0xFF65F0DF) else ComposeColor(0xFF119A8D)
+        TextAlertDeliveryStatus.Sent -> if (isDark) ComposeColor(0xFF7FD2C5) else ComposeColor(0xFF119A8D)
         TextAlertDeliveryStatus.Failed -> if (isDark) ComposeColor(0xFFFF8A84) else MaterialTheme.colorScheme.error
         TextAlertDeliveryStatus.Skipped -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDark) 0.86f else 0.78f)
     }
@@ -2209,7 +2529,7 @@ private fun alertDeliveryStatusColor(status: TextAlertDeliveryStatus): ComposeCo
 private fun alertDeliveryStatusBackgroundColor(status: TextAlertDeliveryStatus): ComposeColor {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return when (status) {
-        TextAlertDeliveryStatus.Sent -> if (isDark) ComposeColor(0xFF103F3B) else ComposeColor(0xFFD9F3EF)
+        TextAlertDeliveryStatus.Sent -> if (isDark) ComposeColor(0xFF153A37) else ComposeColor(0xFFD9F3EF)
         TextAlertDeliveryStatus.Failed -> if (isDark) ComposeColor(0xFF44201F) else ComposeColor(0xFFFFE1DE)
         TextAlertDeliveryStatus.Skipped -> if (isDark) ComposeColor(0xFF2B333A) else ComposeColor(0xFFE8E4DD)
     }
@@ -2219,7 +2539,7 @@ private fun alertDeliveryStatusBackgroundColor(status: TextAlertDeliveryStatus):
 private fun alertDeliveryStatusBorderColor(status: TextAlertDeliveryStatus): ComposeColor {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return when (status) {
-        TextAlertDeliveryStatus.Sent -> if (isDark) ComposeColor(0xFF42D8C8) else ComposeColor(0xFF21AEA2)
+        TextAlertDeliveryStatus.Sent -> if (isDark) ComposeColor(0xFF6ABCAF) else ComposeColor(0xFF21AEA2)
         TextAlertDeliveryStatus.Failed -> if (isDark) ComposeColor(0xFFFF7E78) else MaterialTheme.colorScheme.error.copy(alpha = 0.78f)
         TextAlertDeliveryStatus.Skipped -> MaterialTheme.colorScheme.outline.copy(alpha = if (isDark) 0.55f else 0.45f)
     }
@@ -2303,6 +2623,13 @@ private fun MonitoringPauseCard(
     onTogglePause: (Boolean) -> Unit,
 ) {
     var showPauseDialog by remember { mutableStateOf(false) }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val cardBackgroundColor = if (isDark) ComposeColor(0xFF101F2C) else ComposeColor(0xFFF4F1EA)
+    val cardBorderColor = if (isDark) ComposeColor(0xFF2C4A60) else ComposeColor(0xFFDDD5CB)
+    val iconBackgroundColor = if (isDark) ComposeColor(0xFF172B3A) else ComposeColor(0xFFE8E2D8)
+    val iconBorderColor = if (isDark) ComposeColor(0xFF31506A) else ComposeColor(0xFFD8CEC3)
+    val titleColor = if (isDark) Frost else MaterialTheme.colorScheme.onSurface
+    val bodyColor = if (isDark) MoonMist else MaterialTheme.colorScheme.onSurfaceVariant
 
     if (showPauseDialog) {
         AlertDialog(
@@ -2334,11 +2661,11 @@ private fun MonitoringPauseCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(
-                color = ComposeColor(0xFFFBF7F1),
+                color = cardBackgroundColor,
             )
             .border(
                 width = 1.dp,
-                color = ComposeColor(0xFFD9CEC4).copy(alpha = 0.66f),
+                color = cardBorderColor,
                 shape = RoundedCornerShape(28.dp),
             )
     ) {
@@ -2349,22 +2676,35 @@ private fun MonitoringPauseCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Box(
                     modifier = Modifier
                         .size(56.dp)
-                        .background(ComposeColor(0xFFF3EEE7), CircleShape)
-                        .border(1.dp, ComposeColor(0xFFE4D9CF), CircleShape),
+                        .background(iconBackgroundColor, CircleShape)
+                        .border(1.dp, iconBorderColor, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Security,
                         contentDescription = null,
-                        tint = if (isPaused) Ember else ComposeColor(0xFF789B88),
+                        tint = if (isPaused) {
+                            if (isDark) ComposeColor(0xFFFFA49D) else Ember
+                        } else {
+                            if (isDark) ComposeColor(0xFF9FE7D8) else ComposeColor(0xFF789B88)
+                        },
                         modifier = Modifier.size(28.dp),
                     )
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
                     Text(
                         text = if (isPaused) {
                             stringResource(R.string.monitoring_paused_title)
@@ -2373,7 +2713,9 @@ private fun MonitoringPauseCard(
                         },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = titleColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = if (isPaused) {
@@ -2382,7 +2724,9 @@ private fun MonitoringPauseCard(
                             stringResource(R.string.monitoring_active_body)
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = bodyColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -2406,7 +2750,11 @@ private fun MonitoringPauseCard(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isPaused) ComposeColor(0xFF31577D) else EmberDeep,
+                    color = if (isPaused) {
+                        if (isDark) AuroraBlue else ComposeColor(0xFF31577D)
+                    } else {
+                        if (isDark) ComposeColor(0xFFFFA49D) else EmberDeep
+                    },
                 )
             }
         }
@@ -2419,31 +2767,11 @@ private fun SosActionsCard(
     onTriggerLoudSos: () -> Unit,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    Column(
+    Row(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // Section label
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.emergency_label),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
-                letterSpacing = 4.sp,
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(1f), // Dynamically occupy remaining height!
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            // ?? Silent SOS ??????????????????????????????????????????????????
+            // Silent SOS
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -2471,39 +2799,13 @@ private fun SosActionsCard(
                     .clickable { onTriggerSilentSos() },
                 contentAlignment = Alignment.Center,
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(58.dp)
-                            .background(ComposeColor.White.copy(alpha = 0.12f), CircleShape)
-                            .border(1.dp, ComposeColor.White.copy(alpha = 0.18f), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.VolumeOff,
-                            contentDescription = stringResource(R.string.silent_sos_content_description),
-                            tint = ComposeColor.White.copy(alpha = 0.92f),
-                            modifier = Modifier.size(32.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        modifier = Modifier.fillMaxWidth(),
-                        text = "Silent SOS",
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 26.sp),
-                        fontWeight = FontWeight.Black,
-                        color = ComposeColor.White,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                SosActionContent(
+                    title = stringResource(R.string.silent_sos_title),
+                    icon = Icons.AutoMirrored.Outlined.VolumeOff,
+                    contentDescription = stringResource(R.string.silent_sos_content_description),
+                )
             }
-            // ?? Loud SOS ????????????????????????????????????????????????????
+            // Loud SOS
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -2522,38 +2824,78 @@ private fun SosActionsCard(
                     .clickable { onTriggerLoudSos() },
                 contentAlignment = Alignment.Center,
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(58.dp)
-                            .background(ComposeColor.White.copy(alpha = 0.12f), CircleShape)
-                            .border(1.dp, ComposeColor.White.copy(alpha = 0.18f), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.NotificationsActive,
-                            contentDescription = stringResource(R.string.loud_sos_content_description),
-                            tint = ComposeColor.White,
-                            modifier = Modifier.size(32.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        modifier = Modifier.fillMaxWidth(),
-                        text = stringResource(R.string.loud_sos_title),
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 26.sp),
-                        fontWeight = FontWeight.Black,
-                        color = ComposeColor.White,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                SosActionContent(
+                    title = stringResource(R.string.loud_sos_title),
+                    icon = Icons.Outlined.NotificationsActive,
+                    contentDescription = stringResource(R.string.loud_sos_content_description),
+                )
             }
+    }
+}
+
+@Composable
+private fun SosActionContent(
+    title: String,
+    icon: ImageVector,
+    contentDescription: String,
+) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val compactHeight = maxHeight < 150.dp
+        val compactWidth = maxWidth < 150.dp
+        val useCompactLayout = compactHeight || compactWidth
+        val iconContainerSize = if (useCompactLayout) 48.dp else 58.dp
+        val iconSize = if (useCompactLayout) 27.dp else 32.dp
+        val verticalPadding = if (compactHeight) 10.dp else 14.dp
+        val spacerHeight = if (useCompactLayout) 8.dp else 12.dp
+        val titleFontSize = when {
+            compactWidth -> 18.sp
+            compactHeight -> 20.sp
+            else -> 22.sp
+        }
+        val titleLineHeight = when {
+            compactWidth -> 22.sp
+            compactHeight -> 24.sp
+            else -> 26.sp
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = verticalPadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(iconContainerSize)
+                    .background(ComposeColor.White.copy(alpha = 0.12f), CircleShape)
+                    .border(1.dp, ComposeColor.White.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = ComposeColor.White.copy(alpha = 0.92f),
+                    modifier = Modifier.size(iconSize),
+                )
+            }
+            Spacer(modifier = Modifier.height(spacerHeight))
+            Text(
+                modifier = Modifier.fillMaxWidth(),
+                text = title,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = titleFontSize,
+                    lineHeight = titleLineHeight,
+                ),
+                fontWeight = FontWeight.Black,
+                color = ComposeColor.White,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -2576,6 +2918,7 @@ private fun AiTab(
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        SectionHeader(title = stringResource(R.string.ai_section_detection))
         AiModelStatusCard(
             aiSettings = aiSettings,
             aiDeviceSupport = aiDeviceSupport,
@@ -2584,12 +2927,14 @@ private fun AiTab(
             onDownloadModel = onDownloadModel,
             onDeleteModel = onDeleteModel,
         )
+        SectionHeader(title = stringResource(R.string.ai_section_sos_flow))
         AiOptionsCard(
             aiSettings = aiSettings,
             aiDeviceSupport = aiDeviceSupport,
             aiState = aiState,
             onAiSettingsChange = onAiSettingsChange,
         )
+        SectionHeader(title = stringResource(R.string.ai_section_test_improve))
         AiAudioTestCard(
             aiSettings = aiSettings,
             aiDeviceSupport = aiDeviceSupport,
@@ -2699,11 +3044,14 @@ private fun SettingsTab(
     appLanguage: AppLanguageOption,
     bindCode: String,
     movementSettings: MovementSettings,
+    loudSosSound: LoudSosSound,
     currentG: Float,
     telegramContacts: List<TelegramContact>,
     pushContacts: List<PushContact>,
+    lineContacts: List<LineContact>,
     contactsSyncMessage: String,
     pushSyncMessage: String,
+    lineSyncMessage: String,
     contactMethodMessage: String,
     trustedPushBindCode: String,
     hasCallPermission: Boolean,
@@ -2713,9 +3061,9 @@ private fun SettingsTab(
     hasLocationPermission: Boolean,
     hasNotificationPermission: Boolean,
     hasCompletedQuickSetup: Boolean,
-    scrollToTopToken: Long,
     requestedSectionKey: String,
     requestedSectionVersion: Int,
+    onSettingsSectionRequestHandled: () -> Unit,
     onRequestPermission: () -> Unit,
     onRequestLocationPermission: () -> Unit,
     onRequestCallPermission: () -> Unit,
@@ -2725,8 +3073,10 @@ private fun SettingsTab(
     onThresholdChange: (Float) -> Unit,
     onMovementSettingsPreviewChange: (MovementSettings) -> Unit,
     onMovementSettingsChange: (MovementSettings) -> Unit,
+    onLoudSosSoundChange: (LoudSosSound) -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
     onContactSettingsChange: (AlertContactSettings) -> Unit,
+    onUseLineChange: (Boolean) -> Unit,
     onUseTelegramChange: (Boolean) -> Unit,
     onUsePushChange: (Boolean) -> Unit,
     onUseSmsChange: (Boolean) -> Unit,
@@ -2735,10 +3085,15 @@ private fun SettingsTab(
     onAppLanguageChange: (AppLanguageOption) -> Unit,
     onReviewOnboarding: () -> Unit,
     onResumeQuickSetup: () -> Unit,
+    onResetLocalSettings: () -> Unit,
     onSaveAlertProfile: () -> Unit,
     onRefreshContacts: () -> Unit,
+    onRefreshLineContacts: () -> Unit,
+    onDeleteLineContact: (LineContact) -> Unit,
+    onPrepareLineSetupLink: (() -> Unit) -> Unit,
     onDeleteTelegramContact: (TelegramContact) -> Unit,
     onPrepareTelegramSetupLink: (() -> Unit) -> Unit,
+    onPreparePushSetupLink: (() -> Unit) -> Unit,
     onRefreshPushContacts: () -> Unit,
     onDeletePushContact: (PushContact) -> Unit,
     onTrustedPushBindCodeChange: (String) -> Unit,
@@ -2752,12 +3107,14 @@ private fun SettingsTab(
         )
     }
     val scrollState = rememberScrollState()
-
-    LaunchedEffect(scrollToTopToken) {
-        if (scrollToTopToken > 0L) {
-            scrollState.scrollTo(0)
-        }
-    }
+    val context = LocalContext.current
+    val feedbackLanguage = stringResource(appLanguage.labelRes)
+    val feedbackTheme = stringResource(
+        when (themeMode) {
+            AppThemeMode.Light -> R.string.theme_light
+            AppThemeMode.Dark -> R.string.theme_dark
+        },
+    )
 
     Column(
         modifier = Modifier
@@ -2767,7 +3124,7 @@ private fun SettingsTab(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         val versionName = BuildConfig.VERSION_NAME.ifBlank { "unknown" }
-        // ?? Detection ?????????????????????????????????????????????????????????
+        // Security mode and detection
         SettingsSectionHeader(stringResource(R.string.settings_section_security_mode))
         SecurityModePresetCard(
             selectedPreset = selectedSecurityMode,
@@ -2792,6 +3149,10 @@ private fun SettingsTab(
                 )
             },
         )
+        LoudSosSoundCard(
+            selectedSound = loudSosSound,
+            onSoundSelected = onLoudSosSoundChange,
+        )
 
         Spacer(modifier = Modifier.height(4.dp))
         SettingsSectionHeader(stringResource(R.string.settings_section_detection))
@@ -2808,7 +3169,7 @@ private fun SettingsTab(
             onSettingsChange = onMovementSettingsChange,
         )
 
-        // ?? Permissions ???????????????????????????????????????????????????????
+        // Permissions
         Spacer(modifier = Modifier.height(4.dp))
         SettingsSectionHeader(stringResource(R.string.settings_section_permissions))
         PermissionsSection(
@@ -2824,7 +3185,7 @@ private fun SettingsTab(
             onRequestNotificationPermission = onRequestNotificationPermission,
         )
 
-        // ?? Contacts ??????????????????????????????????????????????????????????
+        // Contacts and alerts
         Spacer(modifier = Modifier.height(4.dp))
         SettingsSectionHeader(stringResource(R.string.settings_section_contacts_alerts))
         AlertProfileCard(
@@ -2838,8 +3199,10 @@ private fun SettingsTab(
             bindCode = bindCode,
             telegramContacts = telegramContacts,
             pushContacts = pushContacts,
+            lineContacts = lineContacts,
             contactsSyncMessage = contactsSyncMessage,
             pushSyncMessage = pushSyncMessage,
+            lineSyncMessage = lineSyncMessage,
             hasCallPermission = hasCallPermission,
             hasSmsPermission = hasSmsPermission,
             hasNotificationPermission = hasNotificationPermission,
@@ -2848,6 +3211,8 @@ private fun SettingsTab(
             trustedPushBindCode = trustedPushBindCode,
             requestedSectionKey = requestedSectionKey,
             requestedSectionVersion = requestedSectionVersion,
+            onSettingsSectionRequestHandled = onSettingsSectionRequestHandled,
+            onUseLineChange = onUseLineChange,
             onUseTelegramChange = onUseTelegramChange,
             onUsePushChange = onUsePushChange,
             onUseSmsChange = onUseSmsChange,
@@ -2858,16 +3223,23 @@ private fun SettingsTab(
             onSecondaryPhoneNumberChange = {
                 onContactSettingsChange(contactSettings.copy(secondaryPhoneNumber = it))
             },
+            onPhoneCallNumberChange = {
+                onContactSettingsChange(contactSettings.copy(phoneCallPhoneNumber = it))
+            },
             onRefreshContacts = onRefreshContacts,
+            onRefreshLineContacts = onRefreshLineContacts,
+            onDeleteLineContact = onDeleteLineContact,
+            onPrepareLineSetupLink = onPrepareLineSetupLink,
             onDeleteTelegramContact = onDeleteTelegramContact,
             onPrepareTelegramSetupLink = onPrepareTelegramSetupLink,
+            onPreparePushSetupLink = onPreparePushSetupLink,
             onTrustedPushBindCodeChange = onTrustedPushBindCodeChange,
             onRefreshPushContacts = onRefreshPushContacts,
             onDeletePushContact = onDeletePushContact,
             onBindCurrentDeviceToPushCode = onBindCurrentDeviceToPushCode,
         )
 
-        // ?? Appearance ????????????????????????????????????????????????????????
+        // Appearance
         Spacer(modifier = Modifier.height(4.dp))
         SettingsSectionHeader(stringResource(R.string.settings_section_appearance))
         ThemeModeCard(
@@ -2879,12 +3251,28 @@ private fun SettingsTab(
             selectedLanguage = appLanguage,
             onLanguageChange = onAppLanguageChange,
         )
+
+        // Support
+        Spacer(modifier = Modifier.height(4.dp))
+        SettingsSectionHeader(stringResource(R.string.settings_section_support))
         Spacer(modifier = Modifier.height(12.dp))
         GuidedSetupCard(
             hasCompletedQuickSetup = hasCompletedQuickSetup,
             onReviewOnboarding = onReviewOnboarding,
             onResumeQuickSetup = onResumeQuickSetup,
         )
+        Spacer(modifier = Modifier.height(12.dp))
+        FeedbackCard(
+            onSendFeedback = {
+                openFeedbackComposer(
+                    context = context,
+                    languageLabel = feedbackLanguage,
+                    themeLabel = feedbackTheme,
+                )
+            },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        LocalSettingsResetCard(onResetLocalSettings = onResetLocalSettings)
         Spacer(modifier = Modifier.height(20.dp))
         Text(
             text = stringResource(R.string.version_label, versionName),
@@ -2937,6 +3325,112 @@ private fun SecurityModePresetCard(
 }
 
 @Composable
+private fun LoudSosSoundCard(
+    selectedSound: LoudSosSound,
+    onSoundSelected: (LoudSosSound) -> Unit,
+) {
+    AuroraCard {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.loud_sos_sound_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.loud_sos_sound_description),
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.60f))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LoudSosSoundOption(
+                    sound = LoudSosSound.Ringtone,
+                    selected = selectedSound == LoudSosSound.Ringtone,
+                    onClick = { onSoundSelected(LoudSosSound.Ringtone) },
+                    modifier = Modifier.weight(1f),
+                )
+                LoudSosSoundOption(
+                    sound = LoudSosSound.Siren,
+                    selected = selectedSound == LoudSosSound.Siren,
+                    onClick = { onSoundSelected(LoudSosSound.Siren) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoudSosSoundOption(
+    sound: LoudSosSound,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val selectedFill = if (isDark) ComposeColor(0xFF2D4558) else ComposeColor(0xFF31577D)
+    val selectedFillEnd = if (isDark) ComposeColor(0xFF243C4F) else ComposeColor(0xFF496D95)
+    val optionShape = RoundedCornerShape(16.dp)
+    val selectedBackground = Brush.linearGradient(
+        colors = listOf(selectedFill, selectedFillEnd),
+    )
+    val unselectedBackground = Brush.linearGradient(
+        colors = listOf(ComposeColor.Transparent, ComposeColor.Transparent),
+    )
+
+    Box(
+        modifier = modifier
+            .height(48.dp)
+            .clip(optionShape)
+            .background(if (selected) selectedBackground else unselectedBackground)
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = if (selected) {
+                        listOf(
+                            Frost.copy(alpha = 0.42f),
+                            Frost.copy(alpha = 0.16f),
+                        )
+                    } else {
+                        listOf(ComposeColor.Transparent, ComposeColor.Transparent)
+                    },
+                ),
+                shape = optionShape,
+            )
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(
+                when (sound) {
+                    LoudSosSound.Siren -> R.string.loud_sos_sound_siren
+                    LoudSosSound.Ringtone -> R.string.loud_sos_sound_ringtone
+                },
+            ),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) {
+                Frost
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun SecurityModeOption(
     preset: SecurityModePreset,
     selected: Boolean,
@@ -2957,7 +3451,7 @@ private fun SecurityModeOption(
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     val presetIcon = when (preset) {
-        SecurityModePreset.Commute -> Icons.Outlined.DirectionsTransit
+        SecurityModePreset.Daily -> Icons.AutoMirrored.Outlined.DirectionsWalk
         SecurityModePreset.Travel -> Icons.Outlined.Luggage
         SecurityModePreset.Workout -> Icons.Outlined.FitnessCenter
         SecurityModePreset.NightWalk -> Icons.Outlined.Nightlight
@@ -3051,7 +3545,7 @@ private fun SecurityModeOption(
  * A section header with aurora left-accent line for visual grouping.
  */
 @Composable
-private fun SettingsSectionHeader(title: String) {
+private fun SectionHeader(title: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -3109,7 +3603,7 @@ private fun GuidedSetupCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedButton(
+            Button(
                 onClick = onReviewOnboarding,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
@@ -3127,6 +3621,195 @@ private fun GuidedSetupCard(
             }
         }
     }
+}
+
+@Composable
+private fun FeedbackCard(
+    onSendFeedback: () -> Unit,
+) {
+    AuroraCard {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Feedback,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_feedback_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_feedback_body),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Button(
+                onClick = onSendFeedback,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Text(stringResource(R.string.settings_feedback_action))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalSettingsResetCard(
+    onResetLocalSettings: () -> Unit,
+) {
+    var showConfirmDialog by remember { mutableStateOf(false) }
+
+    AuroraCard {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_reset_local_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_reset_local_body),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Button(
+                onClick = { showConfirmDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text(stringResource(R.string.settings_reset_local_button))
+            }
+        }
+    }
+
+    if (showConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            title = { Text(stringResource(R.string.settings_reset_local_dialog_title)) },
+            text = { Text(stringResource(R.string.settings_reset_local_dialog_message)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmDialog = false
+                        onResetLocalSettings()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text(stringResource(R.string.settings_reset_local_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+}
+
+private fun openFeedbackComposer(
+    context: Context,
+    languageLabel: String,
+    themeLabel: String,
+) {
+    val feedbackEmail = context.getString(R.string.feedback_email_address).trim()
+    val subject = context.getString(R.string.feedback_email_subject)
+    val body = context.getString(
+        R.string.feedback_email_body,
+        BuildConfig.VERSION_NAME.ifBlank { "unknown" },
+        "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+        readableDeviceName(),
+        languageLabel,
+        themeLabel,
+    )
+    val chooserTitle = context.getString(R.string.feedback_chooser_title)
+
+    val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+        data = Uri.parse("mailto:")
+        if (feedbackEmail.isNotBlank()) {
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(feedbackEmail))
+        }
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        putExtra(Intent.EXTRA_TEXT, body)
+    }
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        if (feedbackEmail.isNotBlank()) {
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(feedbackEmail))
+        }
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        putExtra(Intent.EXTRA_TEXT, "$subject\n\n$body")
+    }
+
+    try {
+        context.startActivity(Intent.createChooser(emailIntent, chooserTitle))
+    } catch (_: ActivityNotFoundException) {
+        try {
+            context.startActivity(Intent.createChooser(shareIntent, chooserTitle))
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, context.getString(R.string.feedback_no_app), Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+private fun readableDeviceName(): String {
+    val manufacturer = Build.MANUFACTURER.orEmpty().trim()
+    val model = Build.MODEL.orEmpty().trim()
+
+    if (manufacturer.isBlank()) return model.ifBlank { "Unknown" }
+    if (model.isBlank()) return manufacturer
+    if (model.startsWith(manufacturer, ignoreCase = true)) return model
+
+    return "$manufacturer $model"
 }
 
 @Composable
@@ -3149,6 +3832,11 @@ private fun AiOptionsCard(
     } else {
         context.getString(R.string.ai_step_description_disabled)
     }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val titleColor = if (isDark) Frost else ComposeColor(0xFF102A43)
+    val bodyColor = if (isDark) MoonMist else ComposeColor(0xFF49627C)
+    val iconBackgroundColor = if (isDark) AuroraTeal.copy(alpha = 0.14f) else ComposeColor(0xFFE9F2ED)
+    val iconTintColor = if (isDark) ComposeColor(0xFF9FE7D8) else ComposeColor(0xFF789B88)
     AuroraCard {
         Column(
             modifier = Modifier.padding(24.dp),
@@ -3161,13 +3849,13 @@ private fun AiOptionsCard(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .background(ComposeColor(0xFFE9F2ED), CircleShape),
+                        .background(iconBackgroundColor, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Security,
                         contentDescription = null,
-                        tint = ComposeColor(0xFF789B88),
+                        tint = iconTintColor,
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -3175,12 +3863,12 @@ private fun AiOptionsCard(
                         text = stringResource(R.string.sos_process_title),
                         style = MaterialTheme.typography.titleLarge.copy(lineHeight = 28.sp),
                         fontWeight = FontWeight.ExtraBold,
-                        color = ComposeColor(0xFF102A43),
+                        color = titleColor,
                     )
                     Text(
                         text = stringResource(R.string.sos_process_subtitle),
                         style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                        color = ComposeColor(0xFF49627C),
+                        color = bodyColor,
                     )
                 }
             }
@@ -3259,8 +3947,12 @@ private fun AiOptionsCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(22.dp))
-                    .background(ComposeColor(0xFFE9EFE8))
-                    .border(1.dp, ComposeColor(0xFFD5DDD2), RoundedCornerShape(22.dp))
+                    .background(if (isDark) AuroraTeal.copy(alpha = 0.10f) else ComposeColor(0xFFE9EFE8))
+                    .border(
+                        1.dp,
+                        if (isDark) AuroraTeal.copy(alpha = 0.24f) else ComposeColor(0xFFD5DDD2),
+                        RoundedCornerShape(22.dp),
+                    )
                     .padding(16.dp),
             ) {
                 Row(
@@ -3270,12 +3962,12 @@ private fun AiOptionsCard(
                     Icon(
                         imageVector = Icons.Outlined.Security,
                         contentDescription = null,
-                        tint = ComposeColor(0xFF789B88),
+                        tint = if (isDark) ComposeColor(0xFF9FE7D8) else ComposeColor(0xFF789B88),
                     )
                     Text(
                         text = stringResource(R.string.verified_sos_tradeoff),
                         style = MaterialTheme.typography.bodySmall,
-                        color = ComposeColor(0xFF536B5F),
+                        color = if (isDark) MoonMist else ComposeColor(0xFF536B5F),
                     )
                 }
             }
@@ -3290,20 +3982,26 @@ private fun SosDispatchModeSelector(
     isAiEnabled: Boolean,
     onModeSelected: (SosDispatchMode) -> Unit,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(IntrinsicSize.Min)
                 .clip(RoundedCornerShape(18.dp))
-                .background(ComposeColor(0xFFF3EEE7))
-                .border(1.dp, ComposeColor(0xFFE2D8CE), RoundedCornerShape(18.dp)),
+                .background(if (isDark) ComposeColor(0xFF132232) else ComposeColor(0xFFF3EEE7))
+                .border(
+                    1.dp,
+                    if (isDark) ComposeColor(0xFF31506A) else ComposeColor(0xFFE2D8CE),
+                    RoundedCornerShape(18.dp),
+                ),
             horizontalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             SosDispatchModePill(
                 icon = Icons.Outlined.FlashOn,
                 label = stringResource(R.string.instant_sos_title),
                 description = stringResource(R.string.instant_sos_description),
+                useAlertAccent = true,
                 selected = selectedMode == SosDispatchMode.Immediate,
                 enabled = true,
                 onClick = { onModeSelected(SosDispatchMode.Immediate) },
@@ -3312,6 +4010,7 @@ private fun SosDispatchModeSelector(
                 icon = Icons.Outlined.VerifiedUser,
                 label = stringResource(R.string.verified_sos_title),
                 description = stringResource(R.string.verified_sos_description),
+                useAlertAccent = false,
                 selected = selectedMode == SosDispatchMode.AiFirst,
                 enabled = aiFirstAvailable,
                 onClick = { onModeSelected(SosDispatchMode.AiFirst) },
@@ -3336,22 +4035,22 @@ private fun RowScope.SosDispatchModePill(
     icon: ImageVector,
     label: String,
     description: String,
+    useAlertAccent: Boolean,
     selected: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val displayLabel = label.withBalancedSosPillBreaks()
-    val displayDescription = description.withBalancedSosPillBreaks()
-    val selectedFill = if (isDark) ComposeColor(0xFF2D4558) else ComposeColor(0xFFFBF7F1)
-    val selectedFillEnd = if (isDark) ComposeColor(0xFF243C4F) else ComposeColor(0xFFF7F1EA)
+    val selectedFill = if (isDark) ComposeColor(0xFF2D4558) else ComposeColor(0xFF31577D)
+    val selectedFillEnd = if (isDark) ComposeColor(0xFF243C4F) else ComposeColor(0xFF496D95)
     val titleColor = if (selected) {
-        if (isDark) Frost else if (label.contains("Instant", ignoreCase = true)) ComposeColor(0xFFC44235) else ComposeColor(0xFF102A43)
+        Frost
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.58f else 0.34f)
     }
     val descriptionColor = if (selected) {
-        if (isDark) Frost.copy(alpha = 0.82f) else ComposeColor(0xFF49627C)
+        Frost.copy(alpha = 0.86f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.52f else 0.32f)
     }
@@ -3420,11 +4119,11 @@ private fun RowScope.SosDispatchModePill(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = displayDescription,
+                    text = description,
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.labelMedium.copy(lineHeight = 16.sp),
                     color = descriptionColor,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -3433,12 +4132,23 @@ private fun RowScope.SosDispatchModePill(
 }
 
 private fun String.withBalancedSosPillBreaks(): String {
-    return when (this) {
-        "Instant SOS" -> "Instant\nSOS"
-        "Quick action" -> "Quick\naction"
-        "Verified SOS" -> "Verified\nSOS"
-        "Higher accuracy" -> "Higher\naccuracy"
-        else -> this
+    val trimmed = trim()
+    if (trimmed.contains('\n')) return trimmed
+
+    val sosIndex = trimmed.indexOf("SOS", ignoreCase = true)
+    if (sosIndex > 0) {
+        val prefix = trimmed.substring(0, sosIndex).trim()
+        val suffix = trimmed.substring(sosIndex).trim()
+        if (prefix.isNotBlank() && suffix.equals("SOS", ignoreCase = true)) {
+            return "$prefix\n$suffix"
+        }
+    }
+
+    val splitIndex = trimmed.indexOf(' ')
+    return if (splitIndex > 0 && splitIndex < trimmed.lastIndex) {
+        trimmed.replaceRange(splitIndex, splitIndex + 1, "\n")
+    } else {
+        this
     }
 }
 
@@ -3555,6 +4265,9 @@ private fun AiTrainingAudioCard(
     aiSettings: AiSettings,
     onAiSettingsChange: (AiSettings) -> Unit,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val titleColor = if (isDark) Frost else ComposeColor(0xFF102A43)
+    val bodyColor = if (isDark) MoonMist else ComposeColor(0xFF49627C)
     AuroraCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -3574,7 +4287,7 @@ private fun AiTrainingAudioCard(
                         .padding(end = 16.dp),
                     style = MaterialTheme.typography.titleLarge.copy(lineHeight = 28.sp),
                     fontWeight = FontWeight.Bold,
-                    color = ComposeColor(0xFF102A43),
+                    color = titleColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -3589,17 +4302,17 @@ private fun AiTrainingAudioCard(
             Text(
                 text = stringResource(R.string.training_audio_summary),
                 style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                color = ComposeColor(0xFF49627C),
+                color = bodyColor,
             )
             Text(
                 text = stringResource(R.string.training_audio_description),
                 style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                color = ComposeColor(0xFF49627C),
+                color = bodyColor,
             )
             Text(
                 text = stringResource(R.string.training_audio_privacy_note),
-                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
-                color = ComposeColor(0xFF6A7E74),
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                color = bodyColor,
             )
         }
     }
@@ -3618,6 +4331,7 @@ private fun AiModelStatusCard(
     val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
     var modelToDelete by remember { mutableStateOf<GemmaModelType?>(null) }
+    var showMeteredDownloadDialog by remember { mutableStateOf(false) }
     val currentModel = remember(aiSettings.modelType) {
         GemmaModelType.fromName(aiSettings.modelType)
     }
@@ -3661,7 +4375,6 @@ private fun AiModelStatusCard(
                         onAiSettingsChange(
                             aiSettings.copy(
                                 isAiEnabled = enabled,
-                                enableAiAnalysis = enabled,
                                 sosDispatchMode = if (enabled) aiSettings.sosDispatchMode else SosDispatchMode.Immediate
                             )
                         )
@@ -3698,7 +4411,17 @@ private fun AiModelStatusCard(
                             .fillMaxWidth()
                             .menuAnchor(),
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                            focusedTextColor = ComposeColor.White,
+                            unfocusedTextColor = ComposeColor.White,
+                            disabledTextColor = ComposeColor.White.copy(alpha = 0.58f),
+                            focusedTrailingIconColor = ComposeColor.White.copy(alpha = 0.86f),
+                            unfocusedTrailingIconColor = ComposeColor.White.copy(alpha = 0.72f),
+                            disabledTrailingIconColor = ComposeColor.White.copy(alpha = 0.42f),
+                            focusedBorderColor = ComposeColor.White.copy(alpha = 0.42f),
+                            unfocusedBorderColor = ComposeColor.White.copy(alpha = 0.24f),
+                            disabledBorderColor = ComposeColor.White.copy(alpha = 0.16f),
+                        )
                     )
                     ExposedDropdownMenu(
                         expanded = expanded,
@@ -3788,6 +4511,15 @@ private fun AiModelStatusCard(
                     }
                 )
             }
+            if (showMeteredDownloadDialog) {
+                MeteredModelDownloadDialog(
+                    onConfirm = {
+                        showMeteredDownloadDialog = false
+                        onDownloadModel()
+                    },
+                    onDismiss = { showMeteredDownloadDialog = false },
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3796,7 +4528,7 @@ private fun AiModelStatusCard(
             ) {
                 Text(
                     text = if (isAiSupported) {
-                        localizeAiStatusMessage(context, aiState.statusMessage)
+                        localizeAiStatusMessage(context, aiState)
                     } else {
                         unsupportedMessage
                     },
@@ -3820,7 +4552,7 @@ private fun AiModelStatusCard(
                     color = ComposeColor.White.copy(alpha = 0.18f)
                 )
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Title + Checkbox Row
+                    // Title + Switch Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -3835,12 +4567,24 @@ private fun AiModelStatusCard(
                                     else ComposeColor.White.copy(alpha = 0.52f),
                             modifier = Modifier.weight(1f),
                         )
-                        Checkbox(
+                        Switch(
                             checked = aiSettings.preloadAiInBackground,
                             onCheckedChange = { enabled ->
                                 onAiSettingsChange(aiSettings.copy(preloadAiInBackground = enabled))
                             },
                             enabled = isAiSupported && aiSettings.isAiEnabled,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = ComposeColor.White,
+                                checkedTrackColor = ComposeColor.White.copy(alpha = 0.28f),
+                                checkedBorderColor = ComposeColor.Transparent,
+                                uncheckedThumbColor = ComposeColor.White.copy(alpha = 0.88f),
+                                uncheckedTrackColor = ComposeColor.White.copy(alpha = 0.16f),
+                                uncheckedBorderColor = ComposeColor.White.copy(alpha = 0.26f),
+                                disabledCheckedThumbColor = ComposeColor.White.copy(alpha = 0.42f),
+                                disabledCheckedTrackColor = ComposeColor.White.copy(alpha = 0.12f),
+                                disabledUncheckedThumbColor = ComposeColor.White.copy(alpha = 0.32f),
+                                disabledUncheckedTrackColor = ComposeColor.White.copy(alpha = 0.08f),
+                            ),
                         )
                     }
 
@@ -3884,20 +4628,26 @@ private fun AiModelStatusCard(
                     LinearProgressIndicator(
                         progress = { (aiState.downloadProgress / 100f).coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth(),
+                        color = ComposeColor.White.copy(alpha = 0.86f),
+                        trackColor = ComposeColor.White.copy(alpha = 0.22f),
                     )
                     Text(
                         text = stringResource(R.string.download_progress_label, aiState.downloadProgress),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ComposeColor.White.copy(alpha = 0.86f),
                     )
                 }
                 // Initializing: show indeterminate progress with no Download button
                 if (isAiSupported && aiState.modelStatus == AiModelStatus.Initializing) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = ComposeColor.White.copy(alpha = 0.86f),
+                        trackColor = ComposeColor.White.copy(alpha = 0.22f),
+                    )
                     Text(
                         text = stringResource(R.string.loading_model_engine),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ComposeColor.White.copy(alpha = 0.86f),
                     )
                 }
                 if (
@@ -3909,15 +4659,25 @@ private fun AiModelStatusCard(
                 ) {
                     val actionLabel = when {
                         aiState.modelStatus == AiModelStatus.Error &&
-                            aiState.statusMessage.startsWith("Model download failed") -> stringResource(R.string.download_model)
-                        aiState.modelStatus == AiModelStatus.Error &&
-                            aiState.statusMessage.startsWith("Downloaded model is too small") -> stringResource(R.string.download_model)
+                            aiState.statusMessageKey == AiStatusMessageKey.DownloadFailed -> stringResource(R.string.download_model)
                         aiState.modelStatus == AiModelStatus.Error -> stringResource(R.string.retry_ai_engine)
                         aiState.modelStatus == AiModelStatus.Downloaded -> stringResource(R.string.initialize_ai_engine)
                         else -> stringResource(R.string.download_model)
                     }
+                    val willDownloadModel =
+                        aiState.modelStatus == AiModelStatus.NotDownloaded ||
+                            (
+                                aiState.modelStatus == AiModelStatus.Error &&
+                                    aiState.statusMessageKey == AiStatusMessageKey.DownloadFailed
+                            )
                     Button(
-                        onClick = onDownloadModel,
+                        onClick = {
+                            if (willDownloadModel && isActiveNetworkMetered(context)) {
+                                showMeteredDownloadDialog = true
+                            } else {
+                                onDownloadModel()
+                            }
+                        },
                         enabled = aiSettings.isAiEnabled,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
@@ -3930,6 +4690,35 @@ private fun AiModelStatusCard(
 
     }
 }
+
+@Composable
+private fun MeteredModelDownloadDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.metered_model_download_title)) },
+        text = { Text(stringResource(R.string.metered_model_download_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.metered_model_download_continue))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        },
+    )
+}
+
+private fun isActiveNetworkMetered(context: Context): Boolean {
+    val connectivityManager = ContextCompat.getSystemService(context, ConnectivityManager::class.java)
+        ?: return false
+    return connectivityManager.isActiveNetworkMetered
+}
+
 @Composable
 private fun AiAudioTestCard(
     aiSettings: AiSettings,
@@ -3966,6 +4755,7 @@ private fun AudioTestSection(
     val context = LocalContext.current
     var secondsLeft by remember { mutableStateOf(0) }
     var isRecording by remember { mutableStateOf(false) }
+    var showMeteredDownloadDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val isAiSupported = aiDeviceSupport.supportsOnDeviceAi
     val isBusy = !isAiSupported || aiState.modelStatus == AiModelStatus.Downloading ||
@@ -3980,6 +4770,29 @@ private fun AudioTestSection(
     }
     val currentModelTitle = remember(aiState.currentModelType, context) {
         GemmaModelType.fromName(aiState.currentModelType.name).title(context)
+    }
+    fun startAudioTest() {
+        scope.launch {
+            isRecording = true
+            secondsLeft = 5
+            // Tick down while onAudioTest runs asynchronously
+            repeat(5) {
+                delay(1_000)
+                secondsLeft--
+            }
+            isRecording = false
+        }
+        onAudioTest()
+    }
+
+    if (showMeteredDownloadDialog) {
+        MeteredModelDownloadDialog(
+            onConfirm = {
+                showMeteredDownloadDialog = false
+                startAudioTest()
+            },
+            onDismiss = { showMeteredDownloadDialog = false },
+        )
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -4039,17 +4852,11 @@ private fun AudioTestSection(
             else -> {
                 Button(
                     onClick = {
-                        scope.launch {
-                            isRecording = true
-                            secondsLeft = 5
-                            // Tick down while onAudioTest runs asynchronously
-                            repeat(5) {
-                                delay(1_000)
-                                secondsLeft--
-                            }
-                            isRecording = false
+                        if (aiState.modelStatus == AiModelStatus.NotDownloaded && isActiveNetworkMetered(context)) {
+                            showMeteredDownloadDialog = true
+                        } else {
+                            startAudioTest()
                         }
-                        onAudioTest()
                     },
                     enabled = !isBusy && aiSettings.isAiEnabled,
                     modifier = Modifier.fillMaxWidth(),
@@ -4257,19 +5064,26 @@ private fun ThemeModeCard(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
 ) {
-    val darkModeBackgroundBrush = remember {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val selectedFill = if (isDark) ComposeColor(0xFF2D4558) else ComposeColor(0xFF31577D)
+    val selectedFillEnd = if (isDark) ComposeColor(0xFF243C4F) else ComposeColor(0xFF496D95)
+    val optionShape = RoundedCornerShape(16.dp)
+    val selectedBackground = remember(isDark) {
+        Brush.linearGradient(colors = listOf(selectedFill, selectedFillEnd))
+    }
+    val unselectedBackground = remember {
+        Brush.linearGradient(colors = listOf(ComposeColor.Transparent, ComposeColor.Transparent))
+    }
+    val selectedBorder = remember {
         Brush.linearGradient(
-            listOf(
-                ComposeColor(0xFF1E3348),
-                ComposeColor(0xFF173042),
+            colors = listOf(
+                Frost.copy(alpha = 0.42f),
+                Frost.copy(alpha = 0.16f),
             ),
         )
     }
-    val transparentBackgroundBrush = remember {
-        Brush.linearGradient(listOf(ComposeColor.Transparent, ComposeColor.Transparent))
-    }
-    val darkModeBorderBrush = remember {
-        Brush.linearGradient(listOf(AuroraBlue.copy(alpha = 0.52f), AuroraTeal.copy(alpha = 0.26f)))
+    val transparentBorder = remember {
+        Brush.linearGradient(colors = listOf(ComposeColor.Transparent, ComposeColor.Transparent))
     }
     AuroraCard {
         Column(
@@ -4302,22 +5116,18 @@ private fun ThemeModeCard(
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                // Light mode pill
+                val isLightSelected = themeMode == AppThemeMode.Light
+                val isDarkSelected = themeMode == AppThemeMode.Dark
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            if (themeMode == AppThemeMode.Light)
-                                MaterialTheme.colorScheme.surface
-                            else
-                                ComposeColor.Transparent
-                        )
+                        .clip(optionShape)
+                        .background(if (isLightSelected) selectedBackground else unselectedBackground)
                         .border(
-                            width = if (themeMode == AppThemeMode.Light) 1.dp else 0.dp,
-                            color = if (themeMode == AppThemeMode.Light) ComposeColor(0x140F1E2D) else ComposeColor.Transparent,
-                            shape = RoundedCornerShape(16.dp),
+                            width = 1.dp,
+                            brush = if (isLightSelected) selectedBorder else transparentBorder,
+                            shape = optionShape,
                         )
                         .clickable { onThemeModeChange(AppThemeMode.Light) },
                     contentAlignment = Alignment.Center,
@@ -4330,30 +5140,21 @@ private fun ThemeModeCard(
                         Text(
                             text = stringResource(R.string.theme_light),
                             style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (themeMode == AppThemeMode.Light) FontWeight.Bold else FontWeight.Normal,
-                            color = if (themeMode == AppThemeMode.Light)
-                                MaterialTheme.colorScheme.onSurface
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (isLightSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isLightSelected) Frost else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                // Dark mode pill
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            if (themeMode == AppThemeMode.Dark)
-                                darkModeBackgroundBrush
-                            else
-                                transparentBackgroundBrush
-                        )
+                        .clip(optionShape)
+                        .background(if (isDarkSelected) selectedBackground else unselectedBackground)
                         .border(
-                            width = if (themeMode == AppThemeMode.Dark) 1.dp else 0.dp,
-                            brush = darkModeBorderBrush,
-                            shape = RoundedCornerShape(16.dp)
+                            width = 1.dp,
+                            brush = if (isDarkSelected) selectedBorder else transparentBorder,
+                            shape = optionShape,
                         )
                         .clickable { onThemeModeChange(AppThemeMode.Dark) },
                     contentAlignment = Alignment.Center,
@@ -4366,9 +5167,8 @@ private fun ThemeModeCard(
                           Text(
                               text = stringResource(R.string.theme_aurora),
                               style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (themeMode == AppThemeMode.Dark) FontWeight.Bold else FontWeight.Normal,
-                            color = if (themeMode == AppThemeMode.Dark) Frost
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (isDarkSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isDarkSelected) Frost else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -4449,8 +5249,10 @@ private fun ContactMethodsCard(
     bindCode: String,
     telegramContacts: List<TelegramContact>,
     pushContacts: List<PushContact>,
+    lineContacts: List<LineContact>,
     contactsSyncMessage: String,
     pushSyncMessage: String,
+    lineSyncMessage: String,
     hasCallPermission: Boolean,
     hasSmsPermission: Boolean,
     hasNotificationPermission: Boolean,
@@ -4459,30 +5261,44 @@ private fun ContactMethodsCard(
     trustedPushBindCode: String,
     requestedSectionKey: String,
     requestedSectionVersion: Int,
+    onSettingsSectionRequestHandled: () -> Unit,
+    onUseLineChange: (Boolean) -> Unit,
     onUseTelegramChange: (Boolean) -> Unit,
     onUsePushChange: (Boolean) -> Unit,
     onUseSmsChange: (Boolean) -> Unit,
     onUsePhoneCallChange: (Boolean) -> Unit,
     onPhoneNumberChange: (String) -> Unit,
     onSecondaryPhoneNumberChange: (String) -> Unit,
+    onPhoneCallNumberChange: (String) -> Unit,
     onRefreshContacts: () -> Unit,
+    onRefreshLineContacts: () -> Unit,
+    onDeleteLineContact: (LineContact) -> Unit,
+    onPrepareLineSetupLink: (() -> Unit) -> Unit,
     onDeleteTelegramContact: (TelegramContact) -> Unit,
     onPrepareTelegramSetupLink: (() -> Unit) -> Unit,
+    onPreparePushSetupLink: (() -> Unit) -> Unit,
     onTrustedPushBindCodeChange: (String) -> Unit,
     onRefreshPushContacts: () -> Unit,
     onDeletePushContact: (PushContact) -> Unit,
     onBindCurrentDeviceToPushCode: () -> Unit,
 ) {
     var expandedSection by rememberSaveable { mutableStateOf<ContactMethodSection?>(null) }
+    var showChannelComparison by rememberSaveable { mutableStateOf(false) }
     val layoutSpec = rememberContactMethodLayoutSpec()
     val contactMethodsCardRequester = remember { BringIntoViewRequester() }
     val pushBindSectionRequester = remember { BringIntoViewRequester() }
 
     LaunchedEffect(requestedSectionKey, requestedSectionVersion) {
         if (requestedSectionVersion <= 0) return@LaunchedEffect
+        var handled = true
         when (requestedSectionKey) {
             SETTINGS_SECTION_CONTACTS -> {
                 expandedSection = null
+                contactMethodsCardRequester.bringIntoView()
+            }
+
+            SETTINGS_SECTION_CONTACTS_LINE -> {
+                expandedSection = ContactMethodSection.Line
                 contactMethodsCardRequester.bringIntoView()
             }
 
@@ -4507,7 +5323,20 @@ private fun ContactMethodsCard(
                 expandedSection = ContactMethodSection.PhoneCall
                 contactMethodsCardRequester.bringIntoView()
             }
+
+            else -> {
+                handled = false
+            }
         }
+        if (handled) {
+            onSettingsSectionRequestHandled()
+        }
+    }
+
+    if (showChannelComparison) {
+        AlertChannelComparisonDialog(
+            onDismiss = { showChannelComparison = false },
+        )
     }
 
     Card(
@@ -4523,48 +5352,160 @@ private fun ContactMethodsCard(
                 .widthIn(max = 760.dp),
             verticalArrangement = Arrangement.spacedBy(layoutSpec.cardSpacing),
         ) {
+            val lineBoundCount = lineContacts.count { it.status == TelegramBindingStatus.Bound }
             val telegramBoundCount = telegramContacts.count { it.status == TelegramBindingStatus.Bound }
             val pushBoundCount = pushContacts.count { it.status == TelegramBindingStatus.Bound }
             val primaryContactReady = contactSettings.emergencyPhoneNumber.isNotBlank()
             val secondaryContactReady = contactSettings.secondaryPhoneNumber.isNotBlank()
+            val phoneCallNumberReady = contactSettings.phoneCallPhoneNumber.isNotBlank()
+            val enabledMethodCount = listOf(
+                contactSettings.useLine,
+                contactSettings.useTelegram,
+                contactSettings.usePush,
+                contactSettings.useSms,
+                contactSettings.usePhoneCall,
+            ).count { it }
+            val lineStatusSummary = when {
+                !contactSettings.useLine -> stringResource(R.string.common_off)
+                lineBoundCount > 0 -> pluralStringResource(
+                    R.plurals.status_contacts_bound,
+                    lineBoundCount,
+                    lineBoundCount,
+                )
+                else -> stringResource(R.string.status_setup_required)
+            }
+            val telegramStatusSummary = when {
+                !contactSettings.useTelegram -> stringResource(R.string.common_off)
+                telegramBoundCount > 0 -> pluralStringResource(
+                    R.plurals.status_contacts_bound,
+                    telegramBoundCount,
+                    telegramBoundCount,
+                )
+                else -> stringResource(R.string.status_setup_required)
+            }
+            val pushStatusSummary = when {
+                !contactSettings.usePush -> stringResource(R.string.common_off)
+                !isPushAvailable -> stringResource(R.string.status_fcm_setup_required)
+                !hasNotificationPermission -> stringResource(R.string.status_permission_required)
+                pushBoundCount > 0 -> pluralStringResource(
+                    R.plurals.status_contacts_bound,
+                    pushBoundCount,
+                    pushBoundCount,
+                )
+                else -> stringResource(R.string.status_setup_required)
+            }
+            val smsStatusSummary = when {
+                !contactSettings.useSms -> stringResource(R.string.common_off)
+                !hasSmsPermission -> stringResource(R.string.status_permission_required)
+                !primaryContactReady -> stringResource(R.string.status_number_required)
+                else -> {
+                    val smsCount = 1 + if (secondaryContactReady) 1 else 0
+                    pluralStringResource(
+                        R.plurals.status_numbers_ready,
+                        smsCount,
+                        smsCount,
+                    )
+                }
+            }
+            val phoneStatusSummary = when {
+                !contactSettings.usePhoneCall -> stringResource(R.string.common_off)
+                !hasCallPermission -> stringResource(R.string.status_permission_required)
+                !phoneCallNumberReady -> stringResource(R.string.status_number_required)
+                else -> stringResource(R.string.status_primary_number_ready)
+            }
 
-            Text(
-                text = stringResource(R.string.contact_methods_title),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = contactMethodMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.contact_methods_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                IconButton(
+                    modifier = Modifier.size(40.dp),
+                    onClick = { showChannelComparison = true },
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = stringResource(R.string.alert_channel_comparison_action),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            ContactMethodsSummary(
+                enabledMethodCount = enabledMethodCount,
+                message = contactMethodMessage,
             )
 
-            ContactMethodToggleRow(
+            val lineToggleSpec = ContactMethodToggleSpec(
+                section = ContactMethodSection.Line,
+                icon = Icons.AutoMirrored.Outlined.Chat,
+                label = stringResource(R.string.contact_method_line),
+                statusSummary = lineStatusSummary,
+                checked = contactSettings.useLine,
+                onCheckedChange = onUseLineChange,
+            )
+            val telegramToggleSpec = ContactMethodToggleSpec(
+                section = ContactMethodSection.Telegram,
                 icon = Icons.AutoMirrored.Outlined.Send,
                 label = stringResource(R.string.contact_method_telegram),
-                description = stringResource(R.string.contact_method_telegram_description),
-                statusSummary = when {
-                    !contactSettings.useTelegram -> stringResource(R.string.common_off)
-                    telegramBoundCount > 0 -> pluralStringResource(
-                        R.plurals.status_contacts_bound,
-                        telegramBoundCount,
-                        telegramBoundCount,
-                    )
-                    else -> stringResource(R.string.status_setup_required)
-                },
+                statusSummary = telegramStatusSummary,
                 checked = contactSettings.useTelegram,
-                expanded = expandedSection == ContactMethodSection.Telegram,
-                onExpandedChange = {
-                    expandedSection = if (expandedSection == ContactMethodSection.Telegram) null else ContactMethodSection.Telegram
-                },
-                onCheckedChange = { enabled ->
-                    onUseTelegramChange(enabled)
-                    expandedSection = when {
-                        enabled -> ContactMethodSection.Telegram
-                        expandedSection == ContactMethodSection.Telegram -> null
-                        else -> expandedSection
-                    }
-                },
+                onCheckedChange = onUseTelegramChange,
+            )
+            val pushToggleSpec = ContactMethodToggleSpec(
+                section = ContactMethodSection.Push,
+                icon = Icons.Outlined.NotificationsActive,
+                label = stringResource(R.string.contact_method_push),
+                statusSummary = pushStatusSummary,
+                checked = contactSettings.usePush,
+                enabled = isPushAvailable,
+                onCheckedChange = onUsePushChange,
+            )
+            val smsToggleSpec = ContactMethodToggleSpec(
+                section = ContactMethodSection.Sms,
+                icon = Icons.Outlined.Sms,
+                label = stringResource(R.string.contact_method_sms),
+                statusSummary = smsStatusSummary,
+                checked = contactSettings.useSms,
+                enabled = hasSmsPermission,
+                onCheckedChange = onUseSmsChange,
+            )
+            val phoneToggleSpec = ContactMethodToggleSpec(
+                section = ContactMethodSection.PhoneCall,
+                icon = Icons.Outlined.Phone,
+                label = stringResource(R.string.contact_method_phone_call),
+                statusSummary = phoneStatusSummary,
+                checked = contactSettings.usePhoneCall,
+                enabled = hasCallPermission,
+                onCheckedChange = onUsePhoneCallChange,
+            )
+
+            ContactMethodGroupHeader(stringResource(R.string.contact_method_group_messages))
+            ContactMethodToggle(
+                spec = lineToggleSpec,
+                expandedSection = expandedSection,
+                onExpandedSectionChange = { expandedSection = it },
+            )
+            ContactMethodSectionContent(visible = expandedSection == ContactMethodSection.Line) {
+                LineManagementContent(
+                    contactSettings = contactSettings,
+                    bindCode = bindCode,
+                    contacts = lineContacts,
+                    lineSyncMessage = lineSyncMessage,
+                    onRefreshContacts = onRefreshLineContacts,
+                    onDeleteContact = onDeleteLineContact,
+                    onPrepareSetupLink = onPrepareLineSetupLink,
+                )
+            }
+
+            ContactMethodToggle(
+                spec = telegramToggleSpec,
+                expandedSection = expandedSection,
+                onExpandedSectionChange = { expandedSection = it },
             )
             ContactMethodSectionContent(visible = expandedSection == ContactMethodSection.Telegram) {
                 TelegramManagementContent(
@@ -4578,39 +5519,10 @@ private fun ContactMethodsCard(
                 )
             }
 
-            ContactMethodToggleRow(
-                icon = Icons.Outlined.NotificationsActive,
-                label = stringResource(R.string.contact_method_push),
-                description = if (isPushAvailable) {
-                    stringResource(R.string.contact_method_push_description_available)
-                } else {
-                    stringResource(R.string.contact_method_push_description_unavailable)
-                },
-                statusSummary = when {
-                    !contactSettings.usePush -> stringResource(R.string.common_off)
-                    !isPushAvailable -> stringResource(R.string.status_fcm_setup_required)
-                    !hasNotificationPermission -> stringResource(R.string.status_permission_required)
-                    pushBoundCount > 0 -> pluralStringResource(
-                        R.plurals.status_contacts_bound,
-                        pushBoundCount,
-                        pushBoundCount,
-                    )
-                    else -> stringResource(R.string.status_setup_required)
-                },
-                checked = contactSettings.usePush,
-                expanded = expandedSection == ContactMethodSection.Push,
-                onExpandedChange = {
-                    expandedSection = if (expandedSection == ContactMethodSection.Push) null else ContactMethodSection.Push
-                },
-                onCheckedChange = { enabled ->
-                    onUsePushChange(enabled)
-                    expandedSection = when {
-                        enabled -> ContactMethodSection.Push
-                        expandedSection == ContactMethodSection.Push -> null
-                        else -> expandedSection
-                    }
-                },
-                enabled = isPushAvailable,
+            ContactMethodToggle(
+                spec = pushToggleSpec,
+                expandedSection = expandedSection,
+                onExpandedSectionChange = { expandedSection = it },
             )
             ContactMethodSectionContent(
                 visible = expandedSection == ContactMethodSection.Push,
@@ -4625,47 +5537,30 @@ private fun ContactMethodsCard(
                     onTrustedPushBindCodeChange = onTrustedPushBindCodeChange,
                     onRefreshContacts = onRefreshPushContacts,
                     onDeleteContact = onDeletePushContact,
+                    onPrepareSetupLink = onPreparePushSetupLink,
                     onBindCurrentDevice = onBindCurrentDeviceToPushCode,
                 )
             }
 
-            ContactMethodToggleRow(
-                icon = Icons.Outlined.Sms,
-                label = stringResource(R.string.contact_method_sms),
-                description = stringResource(R.string.contact_method_sms_description),
-                statusSummary = when {
-                    !contactSettings.useSms -> stringResource(R.string.common_off)
-                    !hasSmsPermission -> stringResource(R.string.status_permission_required)
-                    !primaryContactReady -> stringResource(R.string.status_number_required)
-                    else -> {
-                        val smsCount = 1 + if (secondaryContactReady) 1 else 0
-                        pluralStringResource(
-                            R.plurals.status_numbers_ready,
-                            smsCount,
-                            smsCount,
-                        )
-                    }
-                },
-                checked = contactSettings.useSms,
-                expanded = expandedSection == ContactMethodSection.Sms,
-                onExpandedChange = {
-                    expandedSection = if (expandedSection == ContactMethodSection.Sms) null else ContactMethodSection.Sms
-                },
-                onCheckedChange = { enabled ->
-                    onUseSmsChange(enabled)
-                    expandedSection = when {
-                        enabled -> ContactMethodSection.Sms
-                        expandedSection == ContactMethodSection.Sms -> null
-                        else -> expandedSection
-                    }
-                },
-                enabled = hasSmsPermission,
+            ContactMethodGroupHeader(stringResource(R.string.contact_method_group_carrier))
+            ContactMethodToggle(
+                spec = smsToggleSpec,
+                expandedSection = expandedSection,
+                onExpandedSectionChange = { expandedSection = it },
             )
             ContactMethodSectionContent(visible = expandedSection == ContactMethodSection.Sms) {
+                ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_phone_numbers))
+                Text(
+                    text = stringResource(R.string.contact_method_sms_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 PhoneNumberFieldsContent(
                     primaryNumber = contactSettings.emergencyPhoneNumber,
                     secondaryNumber = contactSettings.secondaryPhoneNumber,
                     showSecondary = true,
+                    primaryLabelRes = R.string.primary_emergency_contact,
+                    primaryPlaceholderRes = R.string.primary_emergency_contact_placeholder,
                     onPrimaryNumberChange = onPhoneNumberChange,
                     onSecondaryNumberChange = onSecondaryPhoneNumberChange,
                 )
@@ -4680,37 +5575,25 @@ private fun ContactMethodsCard(
                 )
             }
 
-            ContactMethodToggleRow(
-                icon = Icons.Outlined.Phone,
-                label = stringResource(R.string.contact_method_phone_call),
-                description = stringResource(R.string.contact_method_phone_description),
-                statusSummary = when {
-                    !contactSettings.usePhoneCall -> stringResource(R.string.common_off)
-                    !hasCallPermission -> stringResource(R.string.status_permission_required)
-                    !primaryContactReady -> stringResource(R.string.status_number_required)
-                    else -> stringResource(R.string.status_primary_number_ready)
-                },
-                checked = contactSettings.usePhoneCall,
-                expanded = expandedSection == ContactMethodSection.PhoneCall,
-                onExpandedChange = {
-                    expandedSection = if (expandedSection == ContactMethodSection.PhoneCall) null else ContactMethodSection.PhoneCall
-                },
-                onCheckedChange = { enabled ->
-                    onUsePhoneCallChange(enabled)
-                    expandedSection = when {
-                        enabled -> ContactMethodSection.PhoneCall
-                        expandedSection == ContactMethodSection.PhoneCall -> null
-                        else -> expandedSection
-                    }
-                },
-                enabled = hasCallPermission,
+            ContactMethodToggle(
+                spec = phoneToggleSpec,
+                expandedSection = expandedSection,
+                onExpandedSectionChange = { expandedSection = it },
             )
             ContactMethodSectionContent(visible = expandedSection == ContactMethodSection.PhoneCall) {
+                ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_phone_numbers))
+                Text(
+                    text = stringResource(R.string.contact_method_phone_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 PhoneNumberFieldsContent(
-                    primaryNumber = contactSettings.emergencyPhoneNumber,
-                    secondaryNumber = contactSettings.secondaryPhoneNumber,
+                    primaryNumber = contactSettings.phoneCallPhoneNumber,
+                    secondaryNumber = "",
                     showSecondary = false,
-                    onPrimaryNumberChange = onPhoneNumberChange,
+                    primaryLabelRes = R.string.phone_call_number_label,
+                    primaryPlaceholderRes = R.string.phone_call_number_placeholder,
+                    onPrimaryNumberChange = onPhoneCallNumberChange,
                     onSecondaryNumberChange = onSecondaryPhoneNumberChange,
                 )
                 Text(
@@ -4728,11 +5611,22 @@ private fun ContactMethodsCard(
 }
 
 private enum class ContactMethodSection {
+    Line,
     Telegram,
     Push,
     Sms,
     PhoneCall,
 }
+
+private data class ContactMethodToggleSpec(
+    val section: ContactMethodSection,
+    val icon: ImageVector,
+    val label: String,
+    val statusSummary: String,
+    val checked: Boolean,
+    val enabled: Boolean = true,
+    val onCheckedChange: (Boolean) -> Unit,
+)
 
 private data class ContactMethodLayoutSpec(
     val cardPadding: Dp,
@@ -4778,10 +5672,286 @@ private fun rememberContactMethodLayoutSpec(): ContactMethodLayoutSpec {
 }
 
 @Composable
+private fun ContactMethodsSummary(
+    enabledMethodCount: Int,
+    message: String,
+) {
+    val isLightSurface = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = if (isLightSurface) {
+                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f)
+                } else {
+                    AuroraBlue.copy(alpha = 0.10f)
+                },
+                shape = RoundedCornerShape(20.dp),
+            )
+            .border(
+                width = 1.dp,
+                color = if (isLightSurface) {
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)
+                } else {
+                    AuroraBlue.copy(alpha = 0.20f)
+                },
+                shape = RoundedCornerShape(20.dp),
+            )
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = if (enabledMethodCount > 0) {
+                pluralStringResource(
+                    R.plurals.contact_methods_enabled_count,
+                    enabledMethodCount,
+                    enabledMethodCount,
+                )
+            } else {
+                stringResource(R.string.contact_methods_none_enabled)
+            },
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    SectionHeader(title = title)
+}
+
+@Composable
+private fun AlertChannelComparisonDialog(
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.alert_channel_comparison_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.alert_channel_comparison_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                AlertChannelComparisonCard(
+                    icon = Icons.AutoMirrored.Outlined.Chat,
+                    title = stringResource(R.string.contact_method_line),
+                    features = listOf(
+                        stringResource(R.string.alert_channel_feature_text_sos),
+                        stringResource(R.string.alert_channel_feature_audio_clip),
+                        stringResource(R.string.alert_channel_feature_ai_summary),
+                    ),
+                    cost = stringResource(R.string.alert_channel_cost_free),
+                )
+                AlertChannelComparisonCard(
+                    icon = Icons.AutoMirrored.Outlined.Send,
+                    title = stringResource(R.string.contact_method_telegram),
+                    features = listOf(
+                        stringResource(R.string.alert_channel_feature_text_sos),
+                        stringResource(R.string.alert_channel_feature_audio_clip),
+                        stringResource(R.string.alert_channel_feature_ai_summary),
+                    ),
+                    cost = stringResource(R.string.alert_channel_cost_free),
+                )
+                AlertChannelComparisonCard(
+                    icon = Icons.Outlined.NotificationsActive,
+                    title = stringResource(R.string.contact_method_push),
+                    features = listOf(
+                        stringResource(R.string.alert_channel_feature_text_sos),
+                        stringResource(R.string.alert_channel_feature_audio_clip),
+                        stringResource(R.string.alert_channel_feature_ai_summary),
+                    ),
+                    cost = stringResource(R.string.alert_channel_cost_free),
+                )
+                AlertChannelComparisonCard(
+                    icon = Icons.Outlined.Sms,
+                    title = stringResource(R.string.contact_method_sms),
+                    features = listOf(
+                        stringResource(R.string.alert_channel_feature_text_sos),
+                        stringResource(R.string.alert_channel_feature_ai_summary),
+                    ),
+                    cost = stringResource(R.string.alert_channel_cost_carrier_fees),
+                    costIsWarning = true,
+                )
+                AlertChannelComparisonCard(
+                    icon = Icons.Outlined.Phone,
+                    title = stringResource(R.string.contact_method_phone_call),
+                    features = listOf(
+                        stringResource(R.string.alert_channel_feature_direct_call),
+                    ),
+                    cost = stringResource(R.string.alert_channel_cost_carrier_fees),
+                    costIsWarning = true,
+                )
+                Text(
+                    text = stringResource(R.string.alert_channel_comparison_phone_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_got_it))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AlertChannelComparisonCard(
+    icon: ImageVector,
+    title: String,
+    features: List<String>,
+    cost: String,
+    costIsWarning: Boolean = false,
+) {
+    val isLightSurface = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = if (isLightSurface) {
+            MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f)
+        } else {
+            AuroraBlue.copy(alpha = 0.12f)
+        },
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (costIsWarning) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AttachMoney,
+                            contentDescription = cost,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                } else {
+                    Text(
+                        text = cost,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                features.forEach { feature ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = feature,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactMethodGroupHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+    )
+}
+
+@Composable
+private fun ContactMethodToggle(
+    spec: ContactMethodToggleSpec,
+    expandedSection: ContactMethodSection?,
+    onExpandedSectionChange: (ContactMethodSection?) -> Unit,
+) {
+    ContactMethodToggleRow(
+        icon = spec.icon,
+        label = spec.label,
+        statusSummary = spec.statusSummary,
+        checked = spec.checked,
+        expanded = expandedSection == spec.section,
+        onExpandedChange = {
+            onExpandedSectionChange(
+                if (expandedSection == spec.section) null else spec.section,
+            )
+        },
+        onCheckedChange = { enabled ->
+            spec.onCheckedChange(enabled)
+            onExpandedSectionChange(
+                when {
+                    enabled -> spec.section
+                    expandedSection == spec.section -> null
+                    else -> expandedSection
+                },
+            )
+        },
+        enabled = spec.enabled,
+    )
+}
+
+@Composable
 private fun ContactMethodToggleRow(
     icon: ImageVector,
     label: String,
-    description: String,
     statusSummary: String = "",
     checked: Boolean,
     expanded: Boolean = false,
@@ -4790,66 +5960,60 @@ private fun ContactMethodToggleRow(
     enabled: Boolean = true,
     dimTextWhenDisabled: Boolean = true,
     showExpandIcon: Boolean = true,
-    alignTop: Boolean = false,
 ) {
+    val statusColor = when {
+        !checked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+        enabled || !dimTextWhenDisabled -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    }
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = if (alignTop) Alignment.Top else Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .weight(1f)
-                .padding(end = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+                ),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (enabled || !dimTextWhenDisabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (enabled || !dimTextWhenDisabled) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
-                )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (enabled || !dimTextWhenDisabled) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                )
-                Text(
-                    text = statusSummary,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (enabled || !dimTextWhenDisabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (enabled || !dimTextWhenDisabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (enabled || !dimTextWhenDisabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+            )
+            Text(
+                text = statusSummary,
+                style = MaterialTheme.typography.labelMedium,
+                color = statusColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showExpandIcon) {
@@ -4868,6 +6032,7 @@ private fun ContactMethodToggleRow(
                     )
                 }
             }
+
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
@@ -4918,47 +6083,85 @@ private fun ContactMethodSectionContent(
 }
 
 @Composable
+private fun ContactMethodSubsectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurface,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
+private fun ContactRefreshHint() {
+    Text(
+        text = stringResource(R.string.contact_refresh_hint),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
 private fun PhoneNumberFieldsContent(
     primaryNumber: String,
     secondaryNumber: String,
     showSecondary: Boolean,
+    @StringRes primaryLabelRes: Int,
+    @StringRes primaryPlaceholderRes: Int,
     onPrimaryNumberChange: (String) -> Unit,
     onSecondaryNumberChange: (String) -> Unit,
 ) {
-    OutlinedTextField(
-        value = primaryNumber,
-        onValueChange = { input ->
-            val digitsOnly = input.filter { it.isDigit() }
-            onPrimaryNumberChange(digitsOnly)
-        },
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text(stringResource(R.string.primary_emergency_contact)) },
-        placeholder = { Text(stringResource(R.string.primary_emergency_contact_placeholder)) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        supportingText = {
-            Text(stringResource(R.string.primary_emergency_contact_help))
-        },
-    )
+    Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        PhoneNumberInputField(
+            value = primaryNumber,
+            label = stringResource(primaryLabelRes),
+            placeholder = stringResource(primaryPlaceholderRes),
+            onValueChange = onPrimaryNumberChange,
+        )
 
-    if (showSecondary) {
+        if (showSecondary) {
+            PhoneNumberInputField(
+                value = secondaryNumber,
+                label = stringResource(R.string.secondary_emergency_contact),
+                placeholder = stringResource(R.string.secondary_emergency_contact_placeholder),
+                onValueChange = onSecondaryNumberChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PhoneNumberInputField(
+    value: String,
+    label: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+        )
         OutlinedTextField(
-            value = secondaryNumber,
+            value = value,
             onValueChange = { input ->
                 val digitsOnly = input.filter { it.isDigit() }
-                onSecondaryNumberChange(digitsOnly)
+                onValueChange(digitsOnly)
             },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.secondary_emergency_contact)) },
-            placeholder = { Text(stringResource(R.string.secondary_emergency_contact_placeholder)) },
+            placeholder = { Text(placeholder) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            supportingText = {
-                Text(stringResource(R.string.secondary_emergency_contact_help))
-            },
         )
     }
 }
+
 @Composable
 private fun CopyableRow(
     label: String,
@@ -5051,7 +6254,6 @@ private fun PermissionsSection(
     val missingItems = permissionItems.filterNot { it.isGranted }
     val allGranted = missingItems.isEmpty()
     var isExpanded by rememberSaveable(allGranted) { mutableStateOf(!allGranted) }
-    var showGrantedDetails by rememberSaveable(grantedItems.size, missingItems.size) { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -5141,9 +6343,7 @@ private fun PermissionsSection(
                 if (grantedItems.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showGrantedDetails = !showGrantedDetails },
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -5165,19 +6365,12 @@ private fun PermissionsSection(
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
-                                Icon(
-                                    imageVector = if (showGrantedDetails) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
                             }
                         }
 
-                        if (showGrantedDetails) {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                grantedItems.forEach { item ->
-                                    GrantedPermissionRow(item = item)
-                                }
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            grantedItems.forEach { item ->
+                                GrantedPermissionRow(item = item)
                             }
                         }
                     }
@@ -5252,6 +6445,112 @@ private fun GrantedPermissionRow(
     }
 }
 
+private fun buildLineSetupDeepLink(lineBotBasicId: String, bindCode: String): String {
+    val normalizedId = lineBotBasicId
+        .trim()
+        .ifBlank { AlarmPreferences.DEFAULT_LINE_BOT_BASIC_ID }
+    return "https://line.me/R/oaMessage/${Uri.encode(normalizedId)}/?${Uri.encode(bindCode)}"
+}
+
+@Composable
+private fun LineManagementContent(
+    contactSettings: AlertContactSettings,
+    bindCode: String,
+    contacts: List<LineContact>,
+    lineSyncMessage: String,
+    onRefreshContacts: () -> Unit,
+    onDeleteContact: (LineContact) -> Unit,
+    onPrepareSetupLink: (() -> Unit) -> Unit,
+) {
+    val layoutSpec = rememberContactMethodLayoutSpec()
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    val lineSetupLink = remember(contactSettings.lineBotBasicId, bindCode) {
+        buildLineSetupDeepLink(contactSettings.lineBotBasicId, bindCode)
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(layoutSpec.sectionSpacing),
+    ) {
+        ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_share_link))
+        Text(
+            text = stringResource(R.string.share_line_setup_message),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        CopyableRow(
+            label = stringResource(R.string.binding_link_label),
+            value = lineSetupLink,
+            onCopy = {
+                onPrepareSetupLink {
+                    clipboardManager.setText(AnnotatedString(lineSetupLink))
+                    Toast.makeText(context, context.getString(R.string.toast_line_setup_link_copied), Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+
+        Button(
+            onClick = {
+                onPrepareSetupLink {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(
+                            Intent.EXTRA_TEXT,
+                            context.getString(
+                                R.string.line_share_setup_link_body,
+                                lineSetupLink,
+                            ),
+                        )
+                    }
+                    context.startActivity(
+                        Intent.createChooser(
+                            shareIntent,
+                            context.getString(R.string.share_line_setup_link_chooser_title),
+                        )
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+        ) {
+            Text(stringResource(R.string.share_line_setup_link_button))
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+        ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_contacts))
+        ContactRefreshHint()
+
+        RefreshContactListButton(
+            text = stringResource(R.string.refresh_line_contact_list_button),
+            onClick = onRefreshContacts,
+        )
+
+        if (lineSyncMessage.isNotBlank()) {
+            Text(
+                text = lineSyncMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (contacts.isEmpty()) {
+            Text(
+                text = stringResource(R.string.no_line_contacts),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            contacts.forEach { contact ->
+                LineContactRow(
+                    contact = contact,
+                    onDeleteContact = onDeleteContact,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun TelegramManagementContent(
     contactSettings: AlertContactSettings,
@@ -5268,12 +6567,12 @@ private fun TelegramManagementContent(
     val configuredBotName = contactSettings.botName
         .removePrefix("@")
         .trim()
-        .ifBlank { "aurora_security_alarm_bot" }
     val inviteLink = "https://t.me/$configuredBotName?start=$bindCode"
 
     Column(
         verticalArrangement = Arrangement.spacedBy(layoutSpec.sectionSpacing),
     ) {
+        ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_share_link))
         Text(
             text = stringResource(R.string.share_setup_link_message),
             style = MaterialTheme.typography.bodyMedium,
@@ -5281,7 +6580,7 @@ private fun TelegramManagementContent(
         )
 
         CopyableRow(
-            label = stringResource(R.string.invite_link_label),
+            label = stringResource(R.string.binding_link_label),
             value = inviteLink,
             onCopy = {
                 onPrepareSetupLink {
@@ -5315,13 +6614,14 @@ private fun TelegramManagementContent(
             Text(stringResource(R.string.share_setup_link_button))
         }
 
-        OutlinedButton(
+        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+        ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_contacts))
+        ContactRefreshHint()
+
+        RefreshContactListButton(
+            text = stringResource(R.string.refresh_contact_list_button),
             onClick = onRefreshContacts,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Text(stringResource(R.string.refresh_contact_list_button))
-        }
+        )
 
         if (contactsSyncMessage.isNotBlank()) {
             Text(
@@ -5345,6 +6645,78 @@ private fun TelegramManagementContent(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LineContactRow(
+    contact: LineContact,
+    onDeleteContact: (LineContact) -> Unit,
+) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp),
+            ) {
+                Text(
+                    text = contact.name.ifBlank { stringResource(R.string.line_contact_fallback_name) },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = contact.status.label(LocalContext.current),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            IconButton(onClick = { showDeleteDialog = true }) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = stringResource(R.string.remove_line_contact_content_description),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(stringResource(R.string.remove_contact_title)) },
+            text = {
+                Text(stringResource(R.string.remove_line_contact_message))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDeleteContact(contact)
+                    },
+                ) {
+                    Text(stringResource(R.string.common_remove))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 
@@ -5568,6 +6940,26 @@ private fun AlertProfileCard(
     }
 }
 
+@Composable
+private fun RefreshContactListButton(
+    text: String,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = MaterialTheme.colorScheme.primary,
+        ),
+    ) {
+        Text(
+            text = text,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PushManagementContent(
@@ -5579,6 +6971,7 @@ private fun PushManagementContent(
     onTrustedPushBindCodeChange: (String) -> Unit,
     onRefreshContacts: () -> Unit,
     onDeleteContact: (PushContact) -> Unit,
+    onPrepareSetupLink: (() -> Unit) -> Unit,
     onBindCurrentDevice: () -> Unit,
 ) {
     val layoutSpec = rememberContactMethodLayoutSpec()
@@ -5589,6 +6982,7 @@ private fun PushManagementContent(
     Column(
         verticalArrangement = Arrangement.spacedBy(layoutSpec.sectionSpacing),
     ) {
+        ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_share_link))
         Text(
             text = stringResource(R.string.share_push_setup_message),
             style = MaterialTheme.typography.bodyMedium,
@@ -5596,33 +6990,37 @@ private fun PushManagementContent(
         )
 
         CopyableRow(
-            label = stringResource(R.string.push_setup_code_label),
+            label = stringResource(R.string.binding_code_label),
             value = bindCode,
             onCopy = {
-                clipboardManager.setText(AnnotatedString(bindCode))
-                Toast.makeText(context, context.getString(R.string.toast_push_setup_code_copied), Toast.LENGTH_SHORT).show()
+                onPrepareSetupLink {
+                    clipboardManager.setText(AnnotatedString(bindCode))
+                    Toast.makeText(context, context.getString(R.string.toast_push_setup_code_copied), Toast.LENGTH_SHORT).show()
+                }
             },
         )
 
         Button(
             onClick = {
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(
-                        Intent.EXTRA_TEXT,
-                        context.getString(
-                            R.string.push_share_setup_link_body,
-                            pushSetupLink,
-                            bindCode,
-                        ),
+                onPrepareSetupLink {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(
+                            Intent.EXTRA_TEXT,
+                            context.getString(
+                                R.string.push_share_setup_link_body,
+                                pushSetupLink,
+                                bindCode,
+                            ),
+                        )
+                    }
+                    context.startActivity(
+                        Intent.createChooser(
+                            shareIntent,
+                            context.getString(R.string.share_push_setup_link_chooser_title),
+                        )
                     )
                 }
-                context.startActivity(
-                    Intent.createChooser(
-                        shareIntent,
-                        context.getString(R.string.share_push_setup_link_chooser_title),
-                    )
-                )
             },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -5631,6 +7029,7 @@ private fun PushManagementContent(
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_receive_sos))
 
         Text(
             text = stringResource(R.string.receive_push_setup_message),
@@ -5667,13 +7066,14 @@ private fun PushManagementContent(
             Text(stringResource(R.string.bind_this_device_button))
         }
 
-        OutlinedButton(
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        ContactMethodSubsectionTitle(stringResource(R.string.contact_setup_section_contacts))
+        ContactRefreshHint()
+
+        RefreshContactListButton(
+            text = stringResource(R.string.refresh_push_contact_list_button),
             onClick = onRefreshContacts,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Text(stringResource(R.string.refresh_push_contact_list_button))
-        }
+        )
 
         if (pushSyncMessage.isNotBlank()) {
             Text(
@@ -5959,7 +7359,11 @@ private fun PermissionStateCard(
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = if (isGranted) "Permission granted" else "Permission required",
+                            text = if (isGranted) {
+                                stringResource(R.string.permission_granted)
+                            } else {
+                                stringResource(R.string.status_permission_required)
+                            },
                             style = MaterialTheme.typography.labelLarge,
                             color = iconTint,
                             fontWeight = FontWeight.SemiBold,
@@ -6060,7 +7464,7 @@ private fun HeroCard(
     val aiStatusLabel = heroAiStatusLabel(context, aiSettings, aiState)
     val aiBadgeColors = heroAiBadgeColors(isDark)
     val aiReadinessMessage = when {
-        !aiSettings.enableAiAnalysis -> null
+        !aiSettings.isAiEnabled -> null
         !aiSettings.preloadAiInBackground -> ""
         aiState.modelStatus == AiModelStatus.Downloading || aiState.modelStatus == AiModelStatus.Initializing ->
             stringResource(R.string.ai_readiness_preparing)
@@ -6195,7 +7599,7 @@ private fun HeroCard(
         }
 
         if (isEmergencyLayout) {
-            // ?? Emergency Layout ????????????????????????????????????????
+            // Emergency layout
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -6253,7 +7657,7 @@ private fun HeroCard(
                 }
             }
         } else {
-            // ?? Normal Layout ???????????????????????????????????????????
+            // Normal layout
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -6590,6 +7994,12 @@ private fun ThresholdCard(
     onThresholdChange: (Float) -> Unit,
 ) {
     var sliderValue by remember { mutableStateOf(thresholdDb) }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val titleColor = if (isDark) Frost else ComposeColor(0xFF102A43)
+    val bodyColor = if (isDark) MoonMist else ComposeColor(0xFF49627C)
+    val iconBackgroundColor = if (isDark) ComposeColor(0xFF172B3A) else ComposeColor(0xFFF3EEE7)
+    val iconBorderColor = if (isDark) ComposeColor(0xFF31506A) else ComposeColor(0xFFE3D8CE)
+    val iconTintColor = if (isDark) AuroraBlue else ComposeColor(0xFF31577D)
 
     LaunchedEffect(thresholdDb) {
         sliderValue = thresholdDb
@@ -6600,41 +8010,19 @@ private fun ThresholdCard(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.sound_sensitivity_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = ComposeColor(0xFF102A43),
-                    )
-                    Text(
-                        text = stringResource(R.string.sound_sensitivity_description),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = ComposeColor(0xFF49627C),
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(ComposeColor(0xFFF3EEE7), CircleShape)
-                        .border(1.dp, ComposeColor(0xFFE3D8CE), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Mic,
-                        contentDescription = null,
-                        tint = ComposeColor(0xFF31577D),
-                    )
-                }
-            }
+            SensitivityTitleRow(
+                icon = Icons.Outlined.Mic,
+                title = stringResource(R.string.sound_sensitivity_title),
+                titleColor = titleColor,
+                iconBackgroundColor = iconBackgroundColor,
+                iconBorderColor = iconBorderColor,
+                iconTintColor = iconTintColor,
+            )
+            Text(
+                text = stringResource(R.string.sound_sensitivity_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = bodyColor,
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -6645,12 +8033,12 @@ private fun ThresholdCard(
                     text = "${sliderValue.roundToInt()} dB",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    color = ComposeColor(0xFF102A43),
+                    color = titleColor,
                 )
                 Text(
                     text = stringResource(R.string.live_db_label, currentDb.roundToInt()),
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (currentDb >= sliderValue) MaterialTheme.colorScheme.error else ComposeColor(0xFF49627C),
+                    color = if (currentDb >= sliderValue) MaterialTheme.colorScheme.error else bodyColor,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -6678,6 +8066,12 @@ private fun MovementSecurityCard(
     onSettingsChange: (MovementSettings) -> Unit,
 ) {
     var sliderValue by remember { mutableStateOf(settings.shakeThresholdG) }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val titleColor = if (isDark) Frost else ComposeColor(0xFF102A43)
+    val bodyColor = if (isDark) MoonMist else ComposeColor(0xFF49627C)
+    val iconBackgroundColor = if (isDark) ComposeColor(0xFF172B3A) else ComposeColor(0xFFF3EEE7)
+    val iconBorderColor = if (isDark) ComposeColor(0xFF31506A) else ComposeColor(0xFFE3D8CE)
+    val iconTintColor = if (isDark) AuroraBlue else ComposeColor(0xFF31577D)
 
     LaunchedEffect(settings.shakeThresholdG) {
         sliderValue = settings.shakeThresholdG
@@ -6693,17 +8087,22 @@ private fun MovementSecurityCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = stringResource(R.string.motion_sensitivity_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = ComposeColor(0xFF102A43),
+                Row(
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 16.dp),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SensitivityTitleRow(
+                        icon = Icons.Outlined.Sensors,
+                        title = stringResource(R.string.motion_sensitivity_title),
+                        titleColor = titleColor,
+                        iconBackgroundColor = iconBackgroundColor,
+                        iconBorderColor = iconBorderColor,
+                        iconTintColor = iconTintColor,
+                    )
+                }
                 Switch(
                     checked = settings.useShakeDetection,
                     onCheckedChange = { onSettingsChange(settings.copy(useShakeDetection = it)) }
@@ -6712,7 +8111,7 @@ private fun MovementSecurityCard(
             Text(
                 text = stringResource(R.string.motion_sensitivity_description),
                 style = MaterialTheme.typography.bodyMedium,
-                color = ComposeColor(0xFF49627C),
+                color = bodyColor,
             )
 
             if (settings.useShakeDetection) {
@@ -6726,12 +8125,12 @@ private fun MovementSecurityCard(
                         text = String.format("%.1f G", sliderValue),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.ExtraBold,
-                        color = ComposeColor(0xFF102A43),
+                        color = titleColor,
                     )
                     Text(
                         text = stringResource(R.string.live_g_label, currentG),
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (currentG >= sliderValue) MaterialTheme.colorScheme.error else ComposeColor(0xFF49627C),
+                        color = if (currentG >= sliderValue) MaterialTheme.colorScheme.error else bodyColor,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -6747,14 +8146,61 @@ private fun MovementSecurityCard(
                     },
                     valueRange = 1.2f..5.0f,
                 )
-                
-                Text(
-                    text = stringResource(R.string.motion_sensitivity_tip),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ComposeColor(0xFF6A7E74)
-                )
             }
         }
+    }
+}
+
+@Composable
+private fun SensitivityTitleRow(
+    icon: ImageVector,
+    title: String,
+    titleColor: ComposeColor,
+    iconBackgroundColor: ComposeColor,
+    iconBorderColor: ComposeColor,
+    iconTintColor: ComposeColor,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SensitivityIconBadge(
+            icon = icon,
+            backgroundColor = iconBackgroundColor,
+            borderColor = iconBorderColor,
+            tintColor = iconTintColor,
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.ExtraBold,
+            color = titleColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun SensitivityIconBadge(
+    icon: ImageVector,
+    backgroundColor: ComposeColor,
+    borderColor: ComposeColor,
+    tintColor: ComposeColor,
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .background(backgroundColor, CircleShape)
+            .border(1.dp, borderColor, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tintColor,
+        )
     }
 }
 
@@ -6771,26 +8217,29 @@ private fun AlarmAppPreview() {
                 apiUrl = "https://example.com/api",
                 apiToken = "secret",
                 botName = "alarm_helper_bot",
+                lineBotBasicId = "@aurora",
                 deviceName = "Phone",
                 userName = "Alex Chen",
                 mobileNumber = "+886 912 345 678",
                 alertMessageTemplate = context.getString(R.string.default_alert_message_template),
+                useLine = true,
                 useTelegram = true,
                 usePush = true,
                 useSms = false,
                 usePhoneCall = false,
                 emergencyPhoneNumber = "",
                 secondaryPhoneNumber = "",
+                phoneCallPhoneNumber = "",
             ),
             aiSettings = AiSettings(
                 sendAudioToContacts = false,
-                enableAiAnalysis = true,
                 preloadAiInBackground = false,
             ),
             themeMode = AppThemeMode.Light,
             appLanguage = AppLanguageOption.English,
             bindCode = "AB12CD34EF56",
             movementSettings = MovementSettings(),
+            loudSosSound = LoudSosSound.Siren,
             currentG = 1.0f,
             telegramContacts = listOf(
                 TelegramContact("1", "Alice", "@alice", TelegramBindingStatus.Bound),
@@ -6799,8 +8248,12 @@ private fun AlarmAppPreview() {
             pushContacts = listOf(
                 PushContact("device-1", "Mia", "Pixel 8", TelegramBindingStatus.Bound),
             ),
+            lineContacts = listOf(
+                LineContact("line-1", "Nina", TelegramBindingStatus.Bound),
+            ),
             contactsSyncMessage = "Last sync completed successfully.",
             pushSyncMessage = "Push sync complete.",
+            lineSyncMessage = "LINE sync complete.",
             contactMethodMessage = "Choose how the app should contact people when an alarm is triggered.",
             trustedPushBindCode = "ZX12AB34CD56",
             hasCallPermission = false,
@@ -6809,9 +8262,9 @@ private fun AlarmAppPreview() {
             hasLocationPermission = true,
             hasNotificationPermission = true,
             hasCompletedQuickSetup = false,
-            scrollToTopToken = 0L,
             requestedSectionKey = "",
             requestedSectionVersion = 0,
+            onSettingsSectionRequestHandled = {},
             onRequestPermission = {},
             onRequestLocationPermission = {},
             onRequestCallPermission = {},
@@ -6821,8 +8274,10 @@ private fun AlarmAppPreview() {
             onThresholdChange = {},
             onMovementSettingsPreviewChange = {},
             onMovementSettingsChange = {},
+            onLoudSosSoundChange = {},
             onAiSettingsChange = {},
             onContactSettingsChange = {},
+            onUseLineChange = {},
             onUseTelegramChange = {},
             onUsePushChange = {},
             onUseSmsChange = {},
@@ -6831,10 +8286,15 @@ private fun AlarmAppPreview() {
             onAppLanguageChange = {},
             onReviewOnboarding = {},
             onResumeQuickSetup = {},
+            onResetLocalSettings = {},
             onSaveAlertProfile = {},
             onRefreshContacts = {},
+            onRefreshLineContacts = {},
+            onDeleteLineContact = {},
+            onPrepareLineSetupLink = { onPrepared -> onPrepared() },
             onDeleteTelegramContact = {},
             onPrepareTelegramSetupLink = { onPrepared -> onPrepared() },
+            onPreparePushSetupLink = { onPrepared -> onPrepared() },
             onRefreshPushContacts = {},
             onDeletePushContact = {},
             onTrustedPushBindCodeChange = {},
@@ -7102,7 +8562,7 @@ private fun PushContactRow(
                     .padding(end = 12.dp),
             ) {
                 Text(
-                    text = contact.name.ifBlank { "Aurora contact" },
+                    text = contact.name.ifBlank { stringResource(R.string.push_contact_fallback_name) },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )

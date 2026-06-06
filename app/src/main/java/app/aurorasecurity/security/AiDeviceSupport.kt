@@ -27,5 +27,3 @@ fun Context.getAiDeviceSupport(): AiDeviceSupport {
         },
     )
 }
-
-internal fun preferredSelectableGemmaModel(): GemmaModelType = GemmaModelType.E2B

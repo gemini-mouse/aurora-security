@@ -1,6 +1,8 @@
 package app.aurorasecurity.security.ui.theme
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -9,7 +11,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 
 private val LightColors = lightColorScheme(
     primary              = Ocean,
@@ -39,7 +40,7 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary              = AuroraBlue,
+    primary              = Color(0xFF7FB7D2),
     onPrimary            = Color(0xFF03101A),
     primaryContainer     = Color(0xFF183247),
     onPrimaryContainer   = Frost,
@@ -47,10 +48,10 @@ private val DarkColors = darkColorScheme(
     onSecondary          = Midnight,
     secondaryContainer   = DeepSea,
     onSecondaryContainer = Frost,
-    tertiary             = AuroraTeal,
+    tertiary             = Color(0xFF7FC8BD),
     onTertiary           = Midnight,
     tertiaryContainer    = Color(0xFF15302F),
-    onTertiaryContainer  = Color(0xFFB8FFF1),
+    onTertiaryContainer  = Color(0xFFC5E7E1),
     background           = Midnight,
     onBackground         = Frost,
     surface              = Island,
@@ -74,13 +75,20 @@ fun AlarmTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as? Activity)?.window ?: return@SideEffect
-            window.statusBarColor = colorScheme.background.toArgb()
-            window.navigationBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !darkTheme
-                isAppearanceLightNavigationBars = !darkTheme
-            }
+            val activity = view.context as? ComponentActivity ?: return@SideEffect
+            val systemBarScrim = colorScheme.background.toArgb()
+            activity.enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.auto(
+                    lightScrim = Color.Transparent.toArgb(),
+                    darkScrim = Color.Transparent.toArgb(),
+                    detectDarkMode = { darkTheme },
+                ),
+                navigationBarStyle = SystemBarStyle.auto(
+                    lightScrim = systemBarScrim,
+                    darkScrim = systemBarScrim,
+                    detectDarkMode = { darkTheme },
+                ),
+            )
         }
     }
 

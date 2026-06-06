@@ -75,45 +75,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private fun historyFieldKey(line: String): String {
-    return line
-        .substringBefore(':')
-        .substringBefore('：')
-        .trim()
-        .uppercase(Locale.ROOT)
-}
-
-private fun historyFieldValue(line: String): String? {
-    val value = line
-        .substringAfter('：', missingDelimiterValue = line.substringAfter(':', missingDelimiterValue = ""))
-        .trim()
-    return value.ifBlank { null }
-}
-
-private fun historyFieldAliases(vararg labels: String): Set<String> {
-    return labels.map { it.uppercase(Locale.ROOT) }.toSet()
-}
-
-private val HISTORY_DATE_KEYS = historyFieldAliases("DATE", "日期", "日付", "날짜", "FECHA")
-private val HISTORY_TIME_KEYS = historyFieldAliases("TIME", "時間", "時刻", "시간", "HORA")
-private val HISTORY_DEVICE_KEYS = historyFieldAliases("DEVICE", "裝置", "端末", "기기", "DISPOSITIVO")
-private val HISTORY_MOBILE_KEYS = historyFieldAliases(
-    "MOBILE NUMBER",
-    "手機號碼",
-    "攜帶號碼",
-    "携帯番号",
-    "휴대폰 번호",
-    "NÚMERO DE CELULAR",
-    "NÚMERO DE MÓVIL",
-)
-private val HISTORY_SOUND_KEYS = historyFieldAliases(
-    "CURRENT SOUND LEVEL",
-    "目前音量",
-    "現在の音量",
-    "현재 소음 수준",
-    "NIVEL DE SONIDO ACTUAL",
-)
-private val HISTORY_LOCATION_KEYS = historyFieldAliases("LOCATION", "位置", "場所", "위치", "UBICACIÓN")
 
 @Composable
 fun HistoryTab(
@@ -152,8 +113,11 @@ fun HistoryTab(
     }
 
     fun playRecord(record: HistoryRecord) {
-        val playableFile = resolvePlayableAudioFile(record.audioFilePath)
-            ?: throw IllegalStateException("Audio file unavailable")
+        val isRemoteAudio = isRemoteAudioUrl(record.audioFilePath)
+        val playableFile = if (isRemoteAudio) null else resolvePlayableAudioFile(record.audioFilePath)
+        if (!isRemoteAudio && playableFile == null) {
+            throw IllegalStateException("Audio file unavailable")
+        }
         val targetRecordId = record.id
         val player = MediaPlayer().apply {
             setAudioAttributes(
@@ -162,15 +126,18 @@ fun HistoryTab(
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build(),
             )
-            FileInputStream(playableFile).use { input ->
-                setDataSource(input.fd)
+            if (isRemoteAudio) {
+                setDataSource(record.audioFilePath)
+            } else {
+                FileInputStream(playableFile!!).use { input ->
+                    setDataSource(input.fd)
+                }
             }
             setVolume(1f, 1f)
-            prepare()
             setOnErrorListener { failedPlayer, what, extra ->
                 Log.e(
                     HISTORY_TAB_TAG,
-                    "MediaPlayer error while playing ${playableFile.absolutePath}, what=$what, extra=$extra",
+                    "MediaPlayer error while playing ${record.audioFilePath}, what=$what, extra=$extra",
                 )
                 runCatching { failedPlayer.reset() }
                 runCatching { failedPlayer.release() }
@@ -188,7 +155,17 @@ fun HistoryTab(
                 if (mediaPlayer == this) mediaPlayer = null
                 if (playingId == targetRecordId) playingId = null
             }
-            start()
+            if (isRemoteAudio) {
+                setOnPreparedListener { preparedPlayer ->
+                    if (mediaPlayer == preparedPlayer && playingId == targetRecordId) {
+                        preparedPlayer.start()
+                    }
+                }
+                prepareAsync()
+            } else {
+                prepare()
+                start()
+            }
         }
         mediaPlayer = player
         playingId = targetRecordId
@@ -629,6 +606,7 @@ private fun HistoryRecordCard(
             }
         }
 
+        val hasPlayableAudio = isPlayableAudioReference(record.audioFilePath)
         if (presentation.type != HistoryRecordType.IncomingPush) {
             HistoryInfoSection(
                 title = stringResource(R.string.history_section_sound_ai),
@@ -650,18 +628,35 @@ private fun HistoryRecordCard(
                     border = palette.sectionBorder,
                 )
             }
-        } else if (presentation.aiLines.isNotEmpty()) {
+        } else if (hasPlayableAudio || presentation.aiLines.isNotEmpty()) {
             HistoryInfoSection(
-                title = stringResource(R.string.history_section_ai_analysis),
+                title = stringResource(
+                    if (hasPlayableAudio) {
+                        R.string.history_section_sound_ai
+                    } else {
+                        R.string.history_section_ai_analysis
+                    },
+                ),
                 accent = palette.accent,
                 background = palette.sectionBackground,
                 border = palette.sectionBorder,
             ) {
-                HistoryAnalysisContent(
-                    aiLines = presentation.aiLines,
-                    accent = palette.accent,
-                    border = palette.sectionBorder,
-                )
+                if (hasPlayableAudio) {
+                    AudioPlaybackRow(
+                        record = record,
+                        isPlaying = isPlaying,
+                        accent = palette.accent,
+                        accentSoft = palette.accentSoft,
+                        onPlayPause = onPlayPause,
+                    )
+                }
+                if (presentation.aiLines.isNotEmpty()) {
+                    HistoryAnalysisContent(
+                        aiLines = presentation.aiLines,
+                        accent = palette.accent,
+                        border = palette.sectionBorder,
+                    )
+                }
             }
         }
     }
@@ -1000,8 +995,9 @@ private fun AudioPlaybackRow(
     accentSoft: Color,
     onPlayPause: () -> Unit,
 ) {
-    val playableFile = remember(record.audioFilePath) { resolvePlayableAudioFile(record.audioFilePath) }
-    val fileExists = playableFile != null
+    val canPlayAudio = remember(record.audioFilePath) {
+        isPlayableAudioReference(record.audioFilePath)
+    }
 
     Row(
         modifier = Modifier
@@ -1011,7 +1007,7 @@ private fun AudioPlaybackRow(
                 if (isPlaying) accentSoft.copy(alpha = 0.24f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
             )
-            .let { if (fileExists) it.clickable { onPlayPause() } else it }
+            .let { if (canPlayAudio) it.clickable { onPlayPause() } else it }
             .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1028,13 +1024,13 @@ private fun AudioPlaybackRow(
         ) {
             Icon(
                 imageVector = when {
-                    !fileExists -> Icons.Outlined.Mic
+                    !canPlayAudio -> Icons.Outlined.Mic
                     isPlaying -> Icons.Default.Stop
                     else -> Icons.Default.PlayArrow
                 },
                 contentDescription = null,
                 tint = when {
-                    !fileExists -> MaterialTheme.colorScheme.error
+                    !canPlayAudio -> MaterialTheme.colorScheme.error
                     isPlaying -> accent
                     else -> MaterialTheme.colorScheme.primary
                 },
@@ -1050,7 +1046,7 @@ private fun AudioPlaybackRow(
             )
             Text(
                 text = when {
-                    !fileExists -> stringResource(R.string.history_audio_missing)
+                    !canPlayAudio -> stringResource(R.string.history_audio_missing)
                     isPlaying -> stringResource(R.string.history_audio_playing)
                     else -> stringResource(R.string.history_audio_tap_to_listen)
                 },
@@ -1071,48 +1067,25 @@ private fun presentRecord(
     val headerDate = formatHistoryDate(timestamp, HISTORY_HEADER_FORMAT)
     val recordType = record.recordType()
 
-    var extractedDate: String? = null
-    var extractedTime: String? = null
-    var extractedDevice: String? = null
-    var extractedMobileNumber: String? = null
-    var extractedCurrentSoundLevel: String? = null
-    var extractedLocation: String? = null
-    var extractedLocationLink: String? = null
-    val alertMessageLines = mutableListOf<String>()
-
-    record.sosText
-        .lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .forEach { line ->
-            val normalized = historyFieldKey(line)
-            when {
-                normalized in HISTORY_DATE_KEYS ->
-                    extractedDate = historyFieldValue(line)
-                normalized in HISTORY_TIME_KEYS ->
-                    extractedTime = historyFieldValue(line)
-                normalized in HISTORY_DEVICE_KEYS ->
-                    extractedDevice = historyFieldValue(line)
-                normalized in HISTORY_MOBILE_KEYS ->
-                    extractedMobileNumber = historyFieldValue(line)
-                normalized in HISTORY_SOUND_KEYS ->
-                    extractedCurrentSoundLevel = historyFieldValue(line)
-                normalized in HISTORY_LOCATION_KEYS -> {
-                    val value = historyFieldValue(line)
-                    if (value != null && value.startsWith("http", ignoreCase = true)) {
-                        extractedLocationLink = value
-                    } else {
-                        extractedLocation = value
-                    }
-                }
-                line.startsWith("http", ignoreCase = true) -> extractedLocationLink = line
-                normalized.contains("MAP") && line.contains("http", ignoreCase = true) ->
-                    extractedLocationLink = historyFieldValue(line)
-                normalized in setOf("GOOGLE MAPS", "MAP", "LINK") ->
-                    extractedLocationLink = historyFieldValue(line)
-                else -> alertMessageLines += line
-            }
+    val alertMessage = record.sosMessage.ifBlank { record.sosText }
+    val recordDate = record.sosDate.ifBlank { dateOnly }
+    val recordTime = record.sosTime.ifBlank { timeOnly }
+    val recordDevice = record.sosDeviceName.ifBlank {
+        context.getString(R.string.history_unknown_device)
+    }
+    val recordMobileNumber = record.sosMobileNumber.ifBlank {
+        context.getString(R.string.history_not_provided)
+    }
+    val recordCurrentSoundLevel = record.sosCurrentSoundLevel.ifBlank {
+        context.getString(R.string.history_unavailable)
+    }
+    val recordLocationLink = record.sosLocationLink
+    val recordLocation = record.sosLocationLabel.ifBlank {
+        when {
+            recordLocationLink.isNotBlank() -> ""
+            else -> context.getString(R.string.history_unavailable)
         }
+    }
 
     val fallbackAlert = if (record.isTest) {
         context.getString(R.string.history_fallback_manual_test)
@@ -1126,7 +1099,7 @@ private fun presentRecord(
         .lineSequence()
         .map { it.trim().removePrefix("-").removePrefix("*").trim() }
         .filter { it.isNotBlank() }
-        .filterNot { it.equals("AI audio analysis result:", ignoreCase = true) }
+        .filterNot { it.isAiAudioAnalysisHeader() }
         .map { localizeHistoryAiLine(context, it) }
         .toList()
 
@@ -1143,16 +1116,29 @@ private fun presentRecord(
             else -> context.getString(R.string.history_title_my_sos)
         },
         subtitle = headerDate,
-        alertMessage = alertMessageLines.joinToString("\n").ifBlank { fallbackAlert },
-        date = extractedDate ?: dateOnly,
-        time = extractedTime ?: timeOnly,
-        device = extractedDevice ?: context.getString(R.string.history_unknown_device),
-        mobileNumber = extractedMobileNumber ?: context.getString(R.string.history_not_provided),
-        currentSoundLevel = extractedCurrentSoundLevel ?: context.getString(R.string.history_unavailable),
+        alertMessage = alertMessage.ifBlank { fallbackAlert },
+        date = recordDate,
+        time = recordTime,
+        device = recordDevice,
+        mobileNumber = recordMobileNumber,
+        currentSoundLevel = recordCurrentSoundLevel,
         textAlertDeliveryStatusLabel = record.textAlertDeliveryStatusLabel(context, recordType),
-        location = extractedLocation ?: context.getString(R.string.history_unavailable),
-        locationLink = extractedLocationLink,
+        location = recordLocation.ifBlank { context.getString(R.string.history_unavailable) },
+        locationLink = recordLocationLink.ifBlank { null },
         aiLines = aiLines,
+    )
+}
+
+private fun String.isAiAudioAnalysisHeader(): Boolean {
+    val normalized = trim()
+        .trimEnd(':', '：')
+        .lowercase()
+    return normalized in setOf(
+        "ai audio analysis result",
+        "ai 音訊分析結果",
+        "ai 音声分析結果",
+        "ai 오디오 분석 결과",
+        "resultado del análisis de audio con ia",
     )
 }
 
@@ -1161,7 +1147,7 @@ private fun HistoryRecord.textAlertDeliveryStatusLabel(
     recordType: HistoryRecordType,
 ): String? {
     if (recordType != HistoryRecordType.LocalAlert || isTest) return null
-    return when (runCatching { TextAlertDeliveryStatus.valueOf(textAlertDeliveryStatus) }.getOrNull()) {
+    return when (runCatching { TextAlertDeliveryStatus.valueOf(sosAlertStatus) }.getOrNull()) {
         TextAlertDeliveryStatus.Sent -> context.getString(R.string.history_text_alert_status_sent)
         TextAlertDeliveryStatus.Failed -> context.getString(R.string.history_text_alert_status_failed)
         TextAlertDeliveryStatus.Skipped -> context.getString(R.string.history_text_alert_status_skipped)
