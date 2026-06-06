@@ -8,6 +8,7 @@
 build/
 node_modules/
 .wrangler/
+website/
 website/.wrangler/
 app/build/
 app/release/
@@ -28,3 +29,4 @@ cf-backend/src/*.js
 *.p12
 *.pem
 *.iml
+ios/
