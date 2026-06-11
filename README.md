@@ -10,6 +10,7 @@ The project is designed for moments when normal phone interaction may be difficu
 |---|---|---|
 | Product video | [YouTube demo](https://youtu.be/PR8oty_1xbw) | Main story and product walkthrough |
 | Live demo / website | [aurorasecurity.app](https://aurorasecurity.app) | Public product overview, screenshots, and privacy messaging |
+| Android app download | [Google Play](https://play.google.com/store/apps/details?id=app.aurorasecurity.security&pcampaignid=web_share) | Official published Android app for the live mobile experience |
 | Code repository | [github.com/gemini-mouse/aurora-security](https://github.com/gemini-mouse/aurora-security) | Source of truth for the app, backend, and website |
 | Kaggle notebook | Submitted with the Kaggle writeup | Reproducible Gemma 4 audio-risk inference demo |
 
