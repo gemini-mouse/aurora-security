@@ -120,6 +120,7 @@ internal class NoiseAlarmAlertDispatcher(
             pushEventId = buildPushEventId(userId, sessionId),
             pushTitle = context.getString(R.string.audio_evidence_title),
             pushMessage = context.getString(R.string.notification_audio_caption),
+            durationMs = clip.durationMs,
         )
         val sent = backendApi.sendPendingAudio(payload)
         if (!sent) alarmPreferences.savePendingAudio(payload)
@@ -148,6 +149,7 @@ internal class NoiseAlarmAlertDispatcher(
             filename = filename,
             caption = context.getString(R.string.notification_audio_caption),
             analysisText = formatAiAnalysisMessage(analysisText),
+            durationMs = clip.durationMs,
         )
         val sent = lineBackendApi.sendPendingAudioAnalysis(payload)
         if (!sent) alarmPreferences.savePendingLineAudioAnalysis(payload)
@@ -292,8 +294,8 @@ internal class NoiseAlarmAlertDispatcher(
                     triggerSource = clip.triggerSource.name,
                     dangerLevel = dangerLevel,
                     capturedAtEpochMs = clip.wavFile.lastModified(),
-                    sampleRateHz = 16_000,
-                    durationMs = 5_000,
+                    sampleRateHz = CrisisAudioConfig.SAMPLE_RATE_HZ,
+                    durationMs = clip.durationMs,
                 ),
             )
             flushPendingMessages()

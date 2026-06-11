@@ -151,6 +151,7 @@ internal fun savePendingAudioToPreferences(
             put("pushEventId", payload.pushEventId)
             put("pushTitle", payload.pushTitle)
             put("pushMessage", payload.pushMessage)
+            put("durationMs", payload.durationMs)
         },
     )
 }
@@ -173,6 +174,7 @@ internal fun loadPendingAudiosFromPreferences(
             pushEventId = item.optString("pushEventId"),
             pushTitle = item.optString("pushTitle"),
             pushMessage = item.optString("pushMessage"),
+            durationMs = item.optInt("durationMs", CrisisAudioConfig.TOTAL_DURATION_MS),
         )
     }
 }
@@ -243,8 +245,8 @@ internal fun loadPendingTrainingAudiosFromPreferences(
             triggerSource = item.optString("triggerSource"),
             dangerLevel = item.optString("dangerLevel").ifBlank { null },
             capturedAtEpochMs = item.optLong("capturedAtEpochMs", 0L),
-            sampleRateHz = item.optInt("sampleRateHz", 16_000),
-            durationMs = item.optInt("durationMs", 5_000),
+            sampleRateHz = item.optInt("sampleRateHz", CrisisAudioConfig.SAMPLE_RATE_HZ),
+            durationMs = item.optInt("durationMs", CrisisAudioConfig.TOTAL_DURATION_MS),
         )
     }
 }
@@ -346,6 +348,7 @@ internal fun savePendingLineAudioAnalysisToPreferences(
             put("filename", payload.filename)
             put("caption", payload.caption)
             put("analysisText", payload.analysisText)
+            put("durationMs", payload.durationMs)
         },
     )
 }
@@ -363,6 +366,7 @@ internal fun loadPendingLineAudioAnalysesFromPreferences(
             filename = item.optString("filename"),
             caption = item.optString("caption"),
             analysisText = item.optString("analysisText"),
+            durationMs = item.optInt("durationMs", CrisisAudioConfig.TOTAL_DURATION_MS),
         )
     }
 }

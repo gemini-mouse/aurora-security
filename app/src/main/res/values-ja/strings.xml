@@ -56,7 +56,7 @@
   <string name="settings_reset_local_confirm">リセット</string>
   <string name="settings_reset_local_failed">ローカル設定をリセットできません。</string>
   <string name="feedback_email_subject">Aurora フィードバック</string>
-  <string name="feedback_email_body">アプリバージョン：%1$s\nAndroid：%2$s\n端末：%3$s\n言語：%4$s\nテーマ：%5$s\n\n内容：\n</string>
+  <string name="feedback_email_body">アプリバージョン：%1$s\nAndroid：%2$s\n端末：%3$s\n言語：%4$s\nテーマ：%5$s\nユーザー ID：%6$s\n\n内容：\n</string>
   <string name="feedback_chooser_title">フィードバックを送信</string>
   <string name="feedback_no_app">利用できるメールまたは共有アプリが見つかりません。</string>
   <string name="language_title">言語</string>
@@ -136,8 +136,8 @@
   <string name="ai_step_title">AI スマート分析</string>
   <string name="sos_alert_title">SOS アラート</string>
   <string name="audio_evidence_title">音声証拠</string>
-  <string name="ai_step_description_unavailable">叫び声や衝突音などの危険音を分析します。\n少なくとも 6 GB のメモリが必要です。</string>
-  <string name="ai_step_description_ready">叫び声や衝突音などの危険音を分析し、要約テキストを作成します。</string>
+  <string name="ai_step_description_unavailable">叫び声や助けを求める声などの危険音を分析します。\n少なくとも 6 GB のメモリが必要です。</string>
+  <string name="ai_step_description_ready">叫び声や助けを求める声などの危険音を分析し、要約テキストを作成します。</string>
   <string name="ai_step_description_preparing">AI を設定中です。Aurora がモデルを準備しています。</string>
   <string name="ai_step_description_disabled">危険音を分析し、要約テキストを作成します。\n先に AI 音声検知をオンにしてください。</string>
   <string name="sos_alert_description_verified">AI が危険と判定した場合のみ送信します。AI が完了できない場合も送信します。</string>
@@ -496,7 +496,7 @@
   <string name="history_ai_unavailable_model_downloading">AI 分析は利用できません。モデルはまだダウンロード中です。</string>
   <string name="history_ai_unavailable_engine_initializing">AI 分析は利用できません。AI エンジンはまだ初期化中です。</string>
   <string name="history_ai_label_acoustic_environment">音響環境</string>
-  <string name="history_ai_label_disruptive_sounds">妨害音</string>
+  <string name="history_ai_label_alert_sounds">警戒音</string>
   <string name="history_ai_label_vocal_stress_emotion">声の緊張と感情</string>
   <string name="history_ai_label_speech_content">発話内容</string>
   <string name="history_ai_label_situation_assessment">状況評価</string>
@@ -578,15 +578,15 @@
   <string name="onboarding_loud_sos_body">すぐに注意を引きたいときの大きな助け。</string>
   <string name="onboarding_ai_title">Aurora は AI で危険な音を認識できます。</string>
   <string name="onboarding_ai_body">AI は危険な音を検知し、何が起きているかを示し、誤報を減らすのに役立ちます。</string>
-  <string name="onboarding_ai_benefit_detection">悲鳴や衝撃音を認識</string>
-  <string name="onboarding_ai_benefit_context">何が起きているかを伝える</string>
+  <string name="onboarding_ai_benefit_detection">悲鳴や助けを求める声を認識</string>
+  <string name="onboarding_ai_benefit_context">何が起きている可能性があるかを判断</string>
   <string name="onboarding_ai_benefit_false_alarm">誤報を減らす</string>
   <string name="onboarding_ai_footer">この機能は後で AI タブから有効にできます。</string>
   <string name="onboarding_checklist_title">初めてですか？まずはこの 3 項目。</string>
   <string name="onboarding_checklist_body">そのほかは後で大丈夫。まずは基本を済ませましょう。</string>
   <string name="onboarding_checklist_item_permissions">推奨される 5 つの権限を確認</string>
   <string name="onboarding_checklist_item_contacts">連絡方法を 1 つ設定</string>
-  <string name="onboarding_checklist_item_test">かんたんにテスト</string>
+  <string name="onboarding_checklist_item_test">SOS を 1 回かんたんにテスト</string>
   <string name="quick_setup_title">初回クイック設定</string>
   <string name="quick_setup_step_label">ステップ %1$d / %2$d</string>
   <string name="quick_setup_action_back">戻る</string>

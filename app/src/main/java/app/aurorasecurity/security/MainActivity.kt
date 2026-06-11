@@ -1889,7 +1889,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                         }
 
                                         val pcmSamples = try {
-                                            recordTestPcmSamples(durationSeconds = 5)
+                                            recordTestPcmSamples(durationSeconds = CrisisAudioConfig.TOTAL_DURATION_SECONDS)
                                         } catch (e: Exception) {
                                             if (wasMonitoring && !isMonitoringPaused) {
                                                 startNoiseAlarmMonitoringService()
@@ -1913,13 +1913,23 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                             m4aBytes = m4aBytes,
                                             file = testClipFile,
                                             wavFile = testClipWavFile,
+                                            durationMs = CrisisAudioConfig.TOTAL_DURATION_MS,
                                         )
                                         runCatching {
                                             if (m4aBytes != null && testClipFile != null) {
                                                 testClipFile.writeBytes(m4aBytes)
                                             }
                                             testClip.wavFile.writeBytes(analysisAudioBytes)
-                                            val result = GemmaAudioAnalysisManager.analyzeClip(context, testClip, currentModel)
+                                            val result = GemmaAudioAnalysisManager.analyzeClip(
+                                                context = context,
+                                                clip = testClip,
+                                                modelType = currentModel,
+                                                metadata = AiAudioAnalysisMetadata(
+                                                    triggerSource = testClip.triggerSource,
+                                                    soundLevelDb = uiState.currentDb,
+                                                    durationMs = testClip.durationMs,
+                                                ),
+                                            )
                                             val alertPayload = AlertMessageFormatter.formatPayload(
                                                 contactSettings,
                                                 uiState.currentDb,
@@ -1949,6 +1959,7 @@ fun AlarmApp(activityIntent: Intent? = null) {
                                 aiSettings = aiSettings,
                                 themeMode = themeMode,
                                 appLanguage = appLanguage,
+                                userId = userId,
                                 bindCode = bindCode,
                                 movementSettings = movementSettings,
                                 loudSosSound = loudSosSound,
@@ -3042,6 +3053,7 @@ private fun SettingsTab(
     aiSettings: AiSettings,
     themeMode: AppThemeMode,
     appLanguage: AppLanguageOption,
+    userId: String,
     bindCode: String,
     movementSettings: MovementSettings,
     loudSosSound: LoudSosSound,
@@ -3268,6 +3280,7 @@ private fun SettingsTab(
                     context = context,
                     languageLabel = feedbackLanguage,
                     themeLabel = feedbackTheme,
+                    userId = userId,
                 )
             },
         )
@@ -3760,6 +3773,7 @@ private fun openFeedbackComposer(
     context: Context,
     languageLabel: String,
     themeLabel: String,
+    userId: String,
 ) {
     val feedbackEmail = context.getString(R.string.feedback_email_address).trim()
     val subject = context.getString(R.string.feedback_email_subject)
@@ -3770,6 +3784,7 @@ private fun openFeedbackComposer(
         readableDeviceName(),
         languageLabel,
         themeLabel,
+        userId.ifBlank { "unknown" },
     )
     val chooserTitle = context.getString(R.string.feedback_chooser_title)
 
@@ -4774,9 +4789,9 @@ private fun AudioTestSection(
     fun startAudioTest() {
         scope.launch {
             isRecording = true
-            secondsLeft = 5
+            secondsLeft = CrisisAudioConfig.TOTAL_DURATION_SECONDS
             // Tick down while onAudioTest runs asynchronously
-            repeat(5) {
+            repeat(CrisisAudioConfig.TOTAL_DURATION_SECONDS) {
                 delay(1_000)
                 secondsLeft--
             }
@@ -4820,7 +4835,12 @@ private fun AudioTestSection(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     LinearProgressIndicator(
-                        progress = { ((5 - secondsLeft) / 5f).coerceIn(0f, 1f) },
+                        progress = {
+                            (
+                                (CrisisAudioConfig.TOTAL_DURATION_SECONDS - secondsLeft).toFloat() /
+                                    CrisisAudioConfig.TOTAL_DURATION_SECONDS
+                            ).coerceIn(0f, 1f)
+                        },
                         modifier = Modifier.weight(1f),
                     )
                     Text(
@@ -5021,9 +5041,11 @@ private fun DangerLevelBadge(level: String) {
     }
 }
 
-private suspend fun recordTestPcmSamples(durationSeconds: Int = 5): ShortArray =
+private suspend fun recordTestPcmSamples(
+    durationSeconds: Int = CrisisAudioConfig.TOTAL_DURATION_SECONDS,
+): ShortArray =
     withContext(Dispatchers.IO) {
-        val sampleRate = 16_000
+        val sampleRate = CrisisAudioConfig.SAMPLE_RATE_HZ
         val frameSize = 512
         val totalSamples = sampleRate * durationSeconds
         val minBuffer = AudioRecord.getMinBufferSize(
@@ -8237,6 +8259,7 @@ private fun AlarmAppPreview() {
             ),
             themeMode = AppThemeMode.Light,
             appLanguage = AppLanguageOption.English,
+            userId = "device-preview-user",
             bindCode = "AB12CD34EF56",
             movementSettings = MovementSettings(),
             loudSosSound = LoudSosSound.Siren,

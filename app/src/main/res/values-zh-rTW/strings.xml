@@ -93,8 +93,8 @@
   <string name="ai_step_title">AI 智慧分析</string>
   <string name="sos_alert_title">SOS 警報</string>
   <string name="audio_evidence_title">現場音訊</string>
-  <string name="ai_step_description_unavailable">分析呼喊、撞擊等危險聲音。\n至少需要 6 GB 記憶體。</string>
-  <string name="ai_step_description_ready">分析呼喊、撞擊等危險聲音，並產生文字摘要。</string>
+  <string name="ai_step_description_unavailable">分析呼喊、求救聲等危險聲音。\n至少需要 6 GB 記憶體。</string>
+  <string name="ai_step_description_ready">分析呼喊、求救聲等危險聲音，並產生文字摘要。</string>
   <string name="ai_step_description_preparing">AI 設定進行中。Aurora 正在準備模型。</string>
   <string name="ai_step_description_disabled">分析危險聲音並產生文字摘要。\n請先開啟 AI 音訊偵測。</string>
   <string name="sos_alert_description_verified">AI 判定危險時才送出警報；若 AI 無法完成，仍會送出。</string>
@@ -401,7 +401,7 @@
   <string name="history_ai_unavailable_model_downloading">AI 分析目前無法使用。模型仍在下載中。</string>
   <string name="history_ai_unavailable_engine_initializing">AI 分析目前無法使用。AI 引擎仍在初始化中。</string>
   <string name="history_ai_label_acoustic_environment">聲學環境</string>
-  <string name="history_ai_label_disruptive_sounds">干擾性聲音</string>
+  <string name="history_ai_label_alert_sounds">警訊聲音</string>
   <string name="history_ai_label_vocal_stress_emotion">語音壓力與情緒</string>
   <string name="history_ai_label_speech_content">語音內容</string>
   <string name="history_ai_label_situation_assessment">情境判斷</string>
@@ -464,7 +464,7 @@
   <string name="settings_reset_local_confirm">重置</string>
   <string name="settings_reset_local_failed">無法重置本機設定。</string>
   <string name="feedback_email_subject">Aurora 意見回饋</string>
-  <string name="feedback_email_body">App 版本：%1$s\nAndroid：%2$s\n裝置：%3$s\n語系：%4$s\n主題：%5$s\n\n回饋內容：\n</string>
+  <string name="feedback_email_body">App 版本：%1$s\nAndroid：%2$s\n裝置：%3$s\n語系：%4$s\n主題：%5$s\n使用者 ID：%6$s\n\n回饋內容：\n</string>
   <string name="feedback_chooser_title">送出回饋</string>
   <string name="feedback_no_app">找不到可用的 Email 或分享 App。</string>
   <string name="language_title">語系</string>
@@ -569,15 +569,15 @@
   <string name="onboarding_loud_sos_body">需要快速引人注意時，大聲求助。</string>
   <string name="onboarding_ai_title">Aurora 可用 AI 辨識警訊聲音。</string>
   <string name="onboarding_ai_body">AI 可協助偵測危險聲音、判斷可能情況，並降低誤報。</string>
-  <string name="onboarding_ai_benefit_detection">辨識尖叫或撞擊聲</string>
-  <string name="onboarding_ai_benefit_context">說明可能正在發生什麼</string>
+  <string name="onboarding_ai_benefit_detection">辨識尖叫或求救聲</string>
+  <string name="onboarding_ai_benefit_context">判斷目前可能發生的情況</string>
   <string name="onboarding_ai_benefit_false_alarm">降低誤報</string>
   <string name="onboarding_ai_footer">之後可在「AI」分頁開啟此功能。</string>
   <string name="onboarding_checklist_title">第一次使用？先完成這 3 項。</string>
   <string name="onboarding_checklist_body">其他功能之後再看，先完成基本設定。</string>
   <string name="onboarding_checklist_item_permissions">檢查 5 項建議權限</string>
   <string name="onboarding_checklist_item_contacts">設定 1 種聯絡方式</string>
-  <string name="onboarding_checklist_item_test">快速測試一次</string>
+  <string name="onboarding_checklist_item_test">快速測試 SOS 一次</string>
   <string name="quick_setup_title">快速首次設定</string>
   <string name="quick_setup_step_label">第 %1$d / %2$d 步</string>
   <string name="quick_setup_action_back">返回</string>

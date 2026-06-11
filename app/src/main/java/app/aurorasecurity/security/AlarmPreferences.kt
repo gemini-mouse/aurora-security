@@ -705,7 +705,7 @@ class AlarmPreferences(context: Context) {
         private const val TERMS_ACCEPTED_MARKER_FILE = "terms_accepted_v1"
         private const val COMMUTE_THRESHOLD_DB = 90f
         private const val COMMUTE_USE_SHAKE_DETECTION = true
-        private const val COMMUTE_SHAKE_THRESHOLD_G = 3.0f
+        private const val COMMUTE_SHAKE_THRESHOLD_G = 2.8f
         private const val COMMUTE_PRELOAD_AI = false
     }
 }

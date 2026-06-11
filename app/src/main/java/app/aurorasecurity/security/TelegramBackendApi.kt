@@ -72,14 +72,14 @@ class TelegramBackendApi {
         val baseUrl = resolveBackendBaseUrl(settings.apiUrl)
 
         val response = executeJsonRequest(
-            url = "$baseUrl/users/$userId/contacts",
+            url = "$baseUrl/users/$userId/telegram-contacts",
             token = settings.apiToken,
             method = "GET",
             body = null,
             wrapNetworkErrors = true,
         )
 
-        val contactsJson = JSONObject(response).optJSONArray("contacts") ?: JSONArray()
+        val contactsJson = JSONObject(response).optJSONArray("telegramContacts") ?: JSONArray()
         buildList {
             for (index in 0 until contactsJson.length()) {
                 val item = contactsJson.getJSONObject(index)
@@ -106,7 +106,7 @@ class TelegramBackendApi {
 
         return@withContext try {
             executeJsonRequest(
-                url = "$baseUrl/users/$userId/contacts/${java.net.URLEncoder.encode(contactId, Charsets.UTF_8.name())}",
+                url = "$baseUrl/users/$userId/telegram-contacts/${java.net.URLEncoder.encode(contactId, Charsets.UTF_8.name())}",
                 token = settings.apiToken,
                 method = "DELETE",
                 body = null,
@@ -186,13 +186,13 @@ class TelegramBackendApi {
 
         val payload = JSONObject()
             .put("userId", userId)
-            .put("caption", "5-second crisis audio clip captured by Aurora Security.")
+            .put("caption", "${clip.durationMs / 1_000}-second crisis audio clip captured by Aurora Security.")
             .put("filename", m4aFilename)
             .put("audioBase64", Base64.getEncoder().encodeToString(audioBytes))
             .put("sendTelegram", settings.useTelegram)
             .put("sendLine", settings.useLine)
             .put("sendPush", settings.usePush)
-            .put("durationMs", 5_000)
+            .put("durationMs", clip.durationMs)
             .toString()
 
         val baseUrl = resolveBackendBaseUrl(settings.apiUrl)
@@ -257,7 +257,7 @@ class TelegramBackendApi {
             .put("pushEventId", payload.pushEventId)
             .put("pushTitle", payload.pushTitle)
             .put("pushMessage", payload.pushMessage)
-            .put("durationMs", 5_000)
+            .put("durationMs", payload.durationMs)
             .toString()
 
         return@withContext try {

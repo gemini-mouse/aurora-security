@@ -218,7 +218,7 @@ internal enum class SecurityModePreset(
         descriptionRes = R.string.preset_daily_description,
         alarmThresholdDb = 90f,
         shakeDetectionEnabled = true,
-        movementThresholdG = 3.0f,
+        movementThresholdG = 2.8f,
         preloadAiEngine = false,
         sosDispatchMode = SosDispatchMode.AiFirst,
     ),

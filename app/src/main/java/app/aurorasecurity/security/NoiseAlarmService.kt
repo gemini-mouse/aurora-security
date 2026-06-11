@@ -437,6 +437,8 @@ class NoiseAlarmService : Service(), SensorEventListener {
             val contactSettings = alarmPreferences.getAlertContactSettings()
             val aiSettings = alarmPreferences.getAiSettings()
             val userId = alarmPreferences.getUserId()
+            val state = NoiseAlarmController.uiState.value
+            val analysisSoundLevelDb = state.triggerDb ?: state.currentDb
 
             // --- Run AI analysis (on-device, no network needed) ---
             var analysisText: String? = null
@@ -446,7 +448,16 @@ class NoiseAlarmService : Service(), SensorEventListener {
                 GemmaAudioAnalysisManager.refreshState(this@NoiseAlarmService, currentModel)
                 historyAiResultText = if (GemmaAudioAnalysisManager.isModelDownloaded(this@NoiseAlarmService, currentModel)) {
                     analysisText = runCatching {
-                        GemmaAudioAnalysisManager.analyzeClip(this@NoiseAlarmService, clip, currentModel)
+                        GemmaAudioAnalysisManager.analyzeClip(
+                            context = this@NoiseAlarmService,
+                            clip = clip,
+                            modelType = currentModel,
+                            metadata = AiAudioAnalysisMetadata(
+                                triggerSource = clip.triggerSource,
+                                soundLevelDb = analysisSoundLevelDb,
+                                durationMs = clip.durationMs,
+                            ),
+                        )
                     }.getOrNull()
                     analysisText ?: alertDispatcher.unavailableAiAnalysisMessage()
                 } else {
@@ -462,7 +473,6 @@ class NoiseAlarmService : Service(), SensorEventListener {
             val shouldSendFollowUpArtifacts =
                 shouldBypassAiVerification(clip.triggerSource) || shouldSendSosAlert
 
-            val state = NoiseAlarmController.uiState.value
             val alertPayload = AlertMessageFormatter.formatPayload(
                 contactSettings,
                 state.triggerDb ?: state.currentDb,

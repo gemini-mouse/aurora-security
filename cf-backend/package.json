@@ -6,9 +6,7 @@
     "dev": "node ./node_modules/wrangler/bin/wrangler.js dev",
     "deploy": "node ./node_modules/wrangler/bin/wrangler.js deploy",
     "db:init": "node ./node_modules/wrangler/bin/wrangler.js d1 execute alarm-db --local --file=./schema.sql",
-    "db:init:remote": "node ./node_modules/wrangler/bin/wrangler.js d1 execute alarm-db --remote --file=./schema.sql",
-    "db:migrate:device-auth": "node ./node_modules/wrangler/bin/wrangler.js d1 execute alarm-db --local --file=./migrations/001_device_auth.sql",
-    "db:migrate:device-auth:remote": "node ./node_modules/wrangler/bin/wrangler.js d1 execute alarm-db --remote --file=./migrations/001_device_auth.sql"
+    "db:init:remote": "node ./node_modules/wrangler/bin/wrangler.js d1 execute alarm-db --remote --file=./schema.sql"
   },
   "dependencies": {
     "hono": "^4.6.14"

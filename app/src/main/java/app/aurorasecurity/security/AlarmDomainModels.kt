@@ -58,6 +58,7 @@ data class PendingAudioPayload(
     val pushEventId: String = "",
     val pushTitle: String = "",
     val pushMessage: String = "",
+    val durationMs: Int = CrisisAudioConfig.TOTAL_DURATION_MS,
 )
 
 data class PendingAnalysisPayload(
@@ -113,6 +114,7 @@ data class PendingLineAudioAnalysisPayload(
     val filename: String,
     val caption: String,
     val analysisText: String,
+    val durationMs: Int = CrisisAudioConfig.TOTAL_DURATION_MS,
 )
 
 enum class AppThemeMode {
@@ -179,5 +181,5 @@ data class LineContact(
 
 data class MovementSettings(
     val useShakeDetection: Boolean = true,
-    val shakeThresholdG: Float = 3.0f,
+    val shakeThresholdG: Float = 2.8f,
 )

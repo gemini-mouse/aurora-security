@@ -57,7 +57,7 @@
   <string name="settings_reset_local_failed">Unable to reset local settings.</string>
   <string name="feedback_email_address" translatable="false">contact@aurorasecurity.app</string>
   <string name="feedback_email_subject">Aurora feedback</string>
-  <string name="feedback_email_body">App version: %1$s\nAndroid: %2$s\nDevice: %3$s\nLanguage: %4$s\nTheme: %5$s\n\nFeedback:\n</string>
+  <string name="feedback_email_body">App version: %1$s\nAndroid: %2$s\nDevice: %3$s\nLanguage: %4$s\nTheme: %5$s\nUser ID: %6$s\n\nFeedback:\n</string>
   <string name="feedback_chooser_title">Send feedback</string>
   <string name="feedback_no_app">No email or sharing app is available.</string>
   <string name="language_title">Language</string>
@@ -133,8 +133,8 @@
   <string name="ai_step_title">AI Smart Analysis</string>
   <string name="sos_alert_title">SOS Alert</string>
   <string name="audio_evidence_title">Audio Evidence</string>
-  <string name="ai_step_description_unavailable">Analyzes shouting, crashes, and other danger sounds.\nRequires at least 6 GB memory.</string>
-  <string name="ai_step_description_ready">Analyzes shouting, crashes, and other danger sounds, then creates a text summary.</string>
+  <string name="ai_step_description_unavailable">Analyzes shouting, calls for help, and other danger sounds.\nRequires at least 6 GB memory.</string>
+  <string name="ai_step_description_ready">Analyzes shouting, calls for help, and other danger sounds, then creates a text summary.</string>
   <string name="ai_step_description_preparing">AI setup is in progress. Aurora is preparing the model.</string>
   <string name="ai_step_description_disabled">Analyzes danger sounds and creates a text summary.\nTurn on AI Audio Detection first.</string>
   <string name="sos_alert_description_verified">Sends the alert only when AI detects danger. If AI cannot finish, Aurora still sends it.</string>
@@ -498,7 +498,7 @@
   <string name="history_ai_unavailable_model_downloading">AI analysis unavailable. The model is still downloading.</string>
   <string name="history_ai_unavailable_engine_initializing">AI analysis unavailable. The AI engine is still initializing.</string>
   <string name="history_ai_label_acoustic_environment">Acoustic Environment</string>
-  <string name="history_ai_label_disruptive_sounds">Disruptive Sounds</string>
+  <string name="history_ai_label_alert_sounds">Alert Sounds</string>
   <string name="history_ai_label_vocal_stress_emotion">Vocal Stress &amp; Emotion</string>
   <string name="history_ai_label_speech_content">Speech Content</string>
   <string name="history_ai_label_situation_assessment">Situation Assessment</string>
@@ -580,15 +580,15 @@
   <string name="onboarding_loud_sos_body">Loud help when you need attention fast.</string>
   <string name="onboarding_ai_title">Aurora can recognize warning sounds with AI.</string>
   <string name="onboarding_ai_body">AI can help detect dangerous sounds, add context to an alert, and reduce false alarms.</string>
-  <string name="onboarding_ai_benefit_detection">Recognize screams or impact sounds</string>
-  <string name="onboarding_ai_benefit_context">Explain what may be happening</string>
+  <string name="onboarding_ai_benefit_detection">Recognize screams or calls for help</string>
+  <string name="onboarding_ai_benefit_context">Assess what may be happening</string>
   <string name="onboarding_ai_benefit_false_alarm">Reduce false alarms</string>
   <string name="onboarding_ai_footer">You can turn this on later in the AI tab.</string>
   <string name="onboarding_checklist_title">First time? Finish these 3 items.</string>
   <string name="onboarding_checklist_body">Learn the rest later. Start with the basics now.</string>
   <string name="onboarding_checklist_item_permissions">Review 5 recommended permissions</string>
   <string name="onboarding_checklist_item_contacts">Set up 1 contact method</string>
-  <string name="onboarding_checklist_item_test">Quick test</string>
+  <string name="onboarding_checklist_item_test">Quick SOS test once</string>
   <string name="quick_setup_title">Quick first-time setup</string>
   <string name="quick_setup_step_label">Step %1$d of %2$d</string>
   <string name="quick_setup_action_back">Back</string>

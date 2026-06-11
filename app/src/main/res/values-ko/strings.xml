@@ -56,7 +56,7 @@
   <string name="settings_reset_local_confirm">초기화</string>
   <string name="settings_reset_local_failed">로컬 설정을 초기화할 수 없습니다.</string>
   <string name="feedback_email_subject">Aurora 피드백</string>
-  <string name="feedback_email_body">앱 버전: %1$s\nAndroid: %2$s\n기기: %3$s\n언어: %4$s\n테마: %5$s\n\n피드백:\n</string>
+  <string name="feedback_email_body">앱 버전: %1$s\nAndroid: %2$s\n기기: %3$s\n언어: %4$s\n테마: %5$s\n사용자 ID: %6$s\n\n피드백:\n</string>
   <string name="feedback_chooser_title">피드백 보내기</string>
   <string name="feedback_no_app">사용 가능한 이메일 또는 공유 앱이 없습니다.</string>
   <string name="language_title">언어</string>
@@ -136,8 +136,8 @@
   <string name="ai_step_title">AI 스마트 분석</string>
   <string name="sos_alert_title">SOS 알림</string>
   <string name="audio_evidence_title">현장 오디오</string>
-  <string name="ai_step_description_unavailable">고함, 충돌음 등 위험한 소리를 분석합니다.\n최소 6GB 메모리가 필요합니다.</string>
-  <string name="ai_step_description_ready">고함, 충돌음 등 위험한 소리를 분석하고 텍스트 요약을 만듭니다.</string>
+  <string name="ai_step_description_unavailable">고함, 도움을 요청하는 소리 등 위험한 소리를 분석합니다.\n최소 6GB 메모리가 필요합니다.</string>
+  <string name="ai_step_description_ready">고함, 도움을 요청하는 소리 등 위험한 소리를 분석하고 텍스트 요약을 만듭니다.</string>
   <string name="ai_step_description_preparing">AI 설정 중입니다. Aurora가 모델을 준비하고 있습니다.</string>
   <string name="ai_step_description_disabled">위험한 소리를 분석하고 텍스트 요약을 만듭니다.\n먼저 AI 오디오 감지를 켜 주세요.</string>
   <string name="sos_alert_description_verified">AI가 위험으로 판단할 때만 알림을 보냅니다. AI가 완료되지 않아도 알림은 전송됩니다.</string>
@@ -496,7 +496,7 @@
   <string name="history_ai_unavailable_model_downloading">AI 분석을 사용할 수 없습니다. 모델이 아직 다운로드 중입니다.</string>
   <string name="history_ai_unavailable_engine_initializing">AI 분석을 사용할 수 없습니다. AI 엔진이 아직 초기화 중입니다.</string>
   <string name="history_ai_label_acoustic_environment">음향 환경</string>
-  <string name="history_ai_label_disruptive_sounds">방해 소음</string>
+  <string name="history_ai_label_alert_sounds">경고음</string>
   <string name="history_ai_label_vocal_stress_emotion">목소리 긴장감 및 감정</string>
   <string name="history_ai_label_speech_content">발화 내용</string>
   <string name="history_ai_label_situation_assessment">상황 판단</string>
@@ -578,15 +578,15 @@
   <string name="onboarding_loud_sos_body">빠르게 주의를 끌어야 할 때 큰 소리로 도움을 요청합니다.</string>
   <string name="onboarding_ai_title">Aurora는 AI로 위험 신호음을 알아들을 수 있습니다.</string>
   <string name="onboarding_ai_body">AI는 위험한 소리를 감지하고, 무슨 일이 일어나는지 설명하며, 오탐을 줄이는 데 도움을 줍니다.</string>
-  <string name="onboarding_ai_benefit_detection">비명이나 충격음을 인식</string>
-  <string name="onboarding_ai_benefit_context">무슨 일이 일어나는지 설명</string>
+  <string name="onboarding_ai_benefit_detection">비명이나 도움을 요청하는 소리를 인식</string>
+  <string name="onboarding_ai_benefit_context">현재 어떤 상황인지 판단</string>
   <string name="onboarding_ai_benefit_false_alarm">오탐 줄이기</string>
   <string name="onboarding_ai_footer">이 기능은 나중에 AI 탭에서 켤 수 있습니다.</string>
   <string name="onboarding_checklist_title">처음이신가요? 이 3가지를 먼저 완료하세요.</string>
   <string name="onboarding_checklist_body">나머지는 나중에 봐도 됩니다. 먼저 기본 설정부터 끝내세요.</string>
   <string name="onboarding_checklist_item_permissions">권장 권한 5개 확인</string>
   <string name="onboarding_checklist_item_contacts">연락 방법 1개 설정</string>
-  <string name="onboarding_checklist_item_test">빠른 테스트 1회</string>
+  <string name="onboarding_checklist_item_test">SOS 빠른 테스트 1회</string>
   <string name="quick_setup_title">빠른 첫 설정</string>
   <string name="quick_setup_step_label">%1$d / %2$d단계</string>
   <string name="quick_setup_action_back">뒤로</string>

@@ -108,6 +108,12 @@ data class AiAnalysisResult(
     val timestamp: String,
 )
 
+data class AiAudioAnalysisMetadata(
+    val triggerSource: EmergencyTriggerSource,
+    val soundLevelDb: Float?,
+    val durationMs: Int,
+)
+
 data class AiFeatureUiState(
     val currentModelType: GemmaModelType = GemmaModelType.E4B,
     val modelStatus: AiModelStatus = AiModelStatus.NotDownloaded,
@@ -291,6 +297,11 @@ object GemmaAudioAnalysisManager {
         context: Context,
         clip: CrisisAudioClip,
         modelType: GemmaModelType,
+        metadata: AiAudioAnalysisMetadata = AiAudioAnalysisMetadata(
+            triggerSource = clip.triggerSource,
+            soundLevelDb = null,
+            durationMs = clip.durationMs,
+        ),
     ): String? {
         ensureInitialized(context = context, modelType = modelType)
         var engineInstance = modelMutex.withLock { engine } ?: return null
@@ -302,7 +313,7 @@ object GemmaAudioAnalysisManager {
         )
 
         return try {
-            val result = runAnalysis(context, engineInstance, clip.analysisAudioBytes, modelType)
+            val result = runAnalysis(context, engineInstance, clip.analysisAudioBytes, modelType, metadata)
             _uiState.value = _uiState.value.copy(
                 isAnalyzing = false,
                 statusMessageKey = AiStatusMessageKey.AnalysisComplete,
@@ -324,7 +335,7 @@ object GemmaAudioAnalysisManager {
                         forceReinitialize = true,
                     )
                     engineInstance = modelMutex.withLock { engine } ?: return@runCatching null
-                    val recoveredResult = runAnalysis(context, engineInstance, clip.analysisAudioBytes, modelType)
+                    val recoveredResult = runAnalysis(context, engineInstance, clip.analysisAudioBytes, modelType, metadata)
                     _uiState.value = _uiState.value.copy(
                         isAnalyzing = false,
                         modelStatus = AiModelStatus.Ready,
@@ -505,7 +516,7 @@ object GemmaAudioAnalysisManager {
                 modelPath = modelFile.absolutePath,
                 backend = backend,
                 audioBackend = Backend.CPU(),
-                maxNumTokens = 512,
+                maxNumTokens = 768,
                 cacheDir = context.cacheDir.absolutePath,
             ),
         )
@@ -544,6 +555,7 @@ object GemmaAudioAnalysisManager {
         engine: Engine,
         audioBytes: ByteArray,
         modelType: GemmaModelType,
+        metadata: AiAudioAnalysisMetadata,
     ): String = withContext(Dispatchers.IO) {
         val conversation = engine.createConversation(
             ConversationConfig(
@@ -562,7 +574,7 @@ object GemmaAudioAnalysisManager {
                 Contents.of(
                     listOf(
                         Content.AudioBytes(audioBytes),
-                        Content.Text(buildAudioAnalysisPrompt(context, modelType)),
+                        Content.Text(buildAudioAnalysisPrompt(context, modelType, metadata)),
                     ),
                 ),
                 object : MessageCallback {
@@ -595,7 +607,11 @@ object GemmaAudioAnalysisManager {
         return File(baseDir, "models/${modelType.version}/${modelType.filename}")
     }
 
-    private fun buildAudioAnalysisPrompt(context: Context, modelType: GemmaModelType): String {
+    private fun buildAudioAnalysisPrompt(
+        context: Context,
+        modelType: GemmaModelType,
+        metadata: AiAudioAnalysisMetadata,
+    ): String {
         val outputLanguage = when (AppLanguageOption.fromLanguageTags(
             AppCompatDelegate.getApplicationLocales().toLanguageTags(),
         )) {
@@ -608,33 +624,62 @@ object GemmaAudioAnalysisManager {
 
         return buildString {
             appendLine("Analyze this audio clip for personal safety risk.")
-            appendLine("Focus strictly on emotional distress and disruptive noises.")
-            appendLine("Return only the requested fields. Do not explain.")
-            appendLine("Write the final field values in $outputLanguage.")
-            appendLine("Keep the field keys exactly in English as shown below.")
-            appendLine("Keep the Danger Level value exactly one of: Danger / High / Medium / Low.")
-            appendLine("RULES:")
-            appendLine("1. Normal talking, silence, or music = Low danger.")
-            appendLine("2. Screaming, crying, calls for help ('help me', 'stop'), or aggressive yelling = High or Danger.")
-            appendLine("3. Sudden loud impacts, thuds, or breaking glass = Medium or High danger.")
+            appendLine()
+            appendLine("Language:")
             if (modelType == GemmaModelType.E2B) {
-                appendLine("4. This fast E2B model must not transcribe speech. Keep Speech Content exactly: unavailable")
-                appendLine("5. For Situation Assessment, rely only on acoustic environment, disruptive sounds, and vocal stress.")
-                appendLine("6. Do not invent, quote, paraphrase, or infer any spoken words or speaker intent.")
+                appendLine("- Write all field values in $outputLanguage.")
+                appendLine("- Do not transcribe, quote, paraphrase, translate, or infer spoken words.")
+                appendLine("- Keep Speech Content exactly: unavailable.")
+            } else {
+                appendLine("- Write all field values in $outputLanguage, except Speech Content.")
+                appendLine("- Speech Content must preserve the original spoken language. Do not translate it.")
             }
             appendLine()
-            appendLine("Return the result in this exact structure:")
-            appendLine("- Acoustic Environment: <describe background noise>")
-            appendLine("- Disruptive Sounds: <e.g., none, thud, breaking glass, siren>")
-            appendLine("- Vocal Stress & Emotion: <e.g., normal, panic, aggressive, screaming>")
+            appendLine("Audio metadata:")
+            appendLine("- Trigger Source: ${metadata.triggerSource.promptLabel()}")
+            appendLine("- Duration: ${metadata.durationMs} ms")
+            appendLine("- Sound Level: ${metadata.soundLevelDb?.let { "%.1f dB".format(it) } ?: "unknown"}")
+            appendLine()
+            appendLine("Definitions:")
+            appendLine("- Acoustic Environment: describe the audible scene, such as quiet room, normal conversation, screaming, crying, traffic, music, or low background noise. Use \"none\" only when the clip is silent or unusable.")
+            if (modelType == GemmaModelType.E2B) {
+                appendLine("- Alert Sounds: safety-relevant audio cues, including screams, crying, panic cries, calls for help, distressed pleading, sirens, or urgent non-transcribed speech cues. Use \"none detected\" only when no safety-relevant cue is heard.")
+                appendLine("- Vocal Stress & Emotion: describe the vocal state, such as normal, calm, angry, crying, panic, aggressive, or screaming.")
+                appendLine("- Situation Assessment: one short sentence based only on acoustic environment, alert sounds, and vocal stress.")
+            } else {
+                appendLine("- Alert Sounds: safety-relevant audio cues, including screams, crying, panic cries, calls for help, distressed pleading, sirens, or urgent words such as \"help\", \"stop\", \"don't\", and equivalents in any language. Use \"none detected\" only when no safety-relevant cue is heard.")
+                appendLine("- Vocal Stress & Emotion: describe the speaker's vocal state, such as normal, calm, angry, crying, panic, aggressive, or screaming.")
+                appendLine("- Speech Content: transcribe meaningful clear speech only, in the original spoken language. For non-word screaming or repeated \"ah\" sounds, use \"non-speech screaming\" instead of long repetition.")
+                appendLine("- Situation Assessment: one short sentence summarizing what may be happening.")
+            }
+            appendLine("- Danger Level: one of Danger, High, Medium, Low.")
+            appendLine()
+            appendLine("Consistency:")
+            appendLine("- If speech, voice, scream, music, or noise is audible, Acoustic Environment must not be \"none\".")
+            appendLine("- If screaming, crying, panic, aggressive yelling, or a call for help is present, Alert Sounds must not be \"none detected\".")
+            appendLine("- Normal conversation without distress is Low.")
+            appendLine("- Screaming, panic, crying, calls for help, or aggressive yelling is High or Danger.")
+            appendLine("- Distressed pleading or repeated rescue requests is Medium or High.")
+            appendLine()
+            appendLine("Output exactly:")
+            appendLine("- Acoustic Environment: <under 12 words>")
+            appendLine("- Alert Sounds: <under 12 words>")
+            appendLine("- Vocal Stress & Emotion: <under 8 words>")
             if (modelType == GemmaModelType.E2B) {
                 appendLine("- Speech Content: unavailable")
-                appendLine("- Situation Assessment: <brief threat summary based only on non-transcribed audio evidence>")
             } else {
-                appendLine("- Speech Content: <transcribed clear speech ONLY>")
-                appendLine("- Situation Assessment: <brief summary of the threat>")
+                appendLine("- Speech Content: <clear speech, non-speech screaming, or none detected>")
             }
+            appendLine("- Situation Assessment: <one short sentence>")
             append("- Danger Level: Danger / High / Medium / Low")
+        }
+    }
+
+    private fun EmergencyTriggerSource.promptLabel(): String {
+        return when (this) {
+            EmergencyTriggerSource.SoundDetection -> "sound detection"
+            EmergencyTriggerSource.SilentSosButton -> "manual silent SOS"
+            EmergencyTriggerSource.LoudSosButton -> "manual loud SOS"
         }
     }
 

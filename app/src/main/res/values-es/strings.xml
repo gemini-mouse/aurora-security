@@ -56,7 +56,7 @@
   <string name="settings_reset_local_confirm">Restablecer</string>
   <string name="settings_reset_local_failed">No se pudieron restablecer los ajustes locales.</string>
   <string name="feedback_email_subject">Comentarios de Aurora</string>
-  <string name="feedback_email_body">Versión de la app: %1$s\nAndroid: %2$s\nDispositivo: %3$s\nIdioma: %4$s\nTema: %5$s\n\nComentarios:\n</string>
+  <string name="feedback_email_body">Versión de la app: %1$s\nAndroid: %2$s\nDispositivo: %3$s\nIdioma: %4$s\nTema: %5$s\nID de usuario: %6$s\n\nComentarios:\n</string>
   <string name="feedback_chooser_title">Enviar comentarios</string>
   <string name="feedback_no_app">No hay una app de correo o compartir disponible.</string>
   <string name="language_title">Idioma</string>
@@ -136,8 +136,8 @@
   <string name="ai_step_title">Análisis inteligente con IA</string>
   <string name="sos_alert_title">Alerta SOS</string>
   <string name="audio_evidence_title">Prueba de audio</string>
-  <string name="ai_step_description_unavailable">Analiza gritos, choques y otros sonidos de peligro.\nRequiere al menos 6 GB de memoria.</string>
-  <string name="ai_step_description_ready">Analiza gritos, choques y otros sonidos de peligro, y crea un resumen de texto.</string>
+  <string name="ai_step_description_unavailable">Analiza gritos, llamadas de auxilio y otros sonidos de peligro.\nRequiere al menos 6 GB de memoria.</string>
+  <string name="ai_step_description_ready">Analiza gritos, llamadas de auxilio y otros sonidos de peligro, y crea un resumen de texto.</string>
   <string name="ai_step_description_preparing">La IA se está configurando. Aurora está preparando el modelo.</string>
   <string name="ai_step_description_disabled">Analiza sonidos de peligro y crea un resumen de texto.\nActiva primero Detección de audio con IA.</string>
   <string name="sos_alert_description_verified">Envía la alerta solo si la IA detecta peligro. Si la IA no termina, Aurora la envía igual.</string>
@@ -497,7 +497,7 @@
   <string name="history_ai_unavailable_model_downloading">Análisis de IA no disponible. El modelo aún se está descargando.</string>
   <string name="history_ai_unavailable_engine_initializing">Análisis de IA no disponible. El motor de IA aún se está inicializando.</string>
   <string name="history_ai_label_acoustic_environment">Entorno acústico</string>
-  <string name="history_ai_label_disruptive_sounds">Sonidos alterados</string>
+  <string name="history_ai_label_alert_sounds">Sonidos de alerta</string>
   <string name="history_ai_label_vocal_stress_emotion">Tensión y emoción en la voz</string>
   <string name="history_ai_label_speech_content">Contenido del habla</string>
   <string name="history_ai_label_situation_assessment">Evaluación de la situación</string>
@@ -579,15 +579,15 @@
   <string name="onboarding_loud_sos_body">Ayuda ruidosa cuando necesitas llamar la atención rápido.</string>
   <string name="onboarding_ai_title">Aurora puede reconocer sonidos de alerta con IA.</string>
   <string name="onboarding_ai_body">La IA puede detectar sonidos peligrosos, explicar lo que podría estar pasando y reducir falsas alarmas.</string>
-  <string name="onboarding_ai_benefit_detection">Reconocer gritos o impactos</string>
-  <string name="onboarding_ai_benefit_context">Explicar lo que podría estar pasando</string>
+  <string name="onboarding_ai_benefit_detection">Reconocer gritos o llamadas de auxilio</string>
+  <string name="onboarding_ai_benefit_context">Evaluar qué podría estar pasando</string>
   <string name="onboarding_ai_benefit_false_alarm">Reducir falsas alarmas</string>
   <string name="onboarding_ai_footer">Puedes activarlo más tarde en la pestaña IA.</string>
   <string name="onboarding_checklist_title">¿Primera vez? Completa estos 3 pasos.</string>
   <string name="onboarding_checklist_body">Lo demás puede esperar. Empieza con lo básico.</string>
   <string name="onboarding_checklist_item_permissions">Revisa 5 permisos recomendados</string>
   <string name="onboarding_checklist_item_contacts">Configura 1 método de contacto</string>
-  <string name="onboarding_checklist_item_test">Haz una prueba rápida</string>
+  <string name="onboarding_checklist_item_test">Haz una prueba rápida de SOS</string>
   <string name="quick_setup_title">Configuración inicial rápida</string>
   <string name="quick_setup_step_label">Paso %1$d de %2$d</string>
   <string name="quick_setup_action_back">Atrás</string>

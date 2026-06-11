@@ -16,7 +16,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
 internal object AudioEncodingUtil {
-    private const val SAMPLE_RATE_HZ = 16_000
     private const val CHANNEL_COUNT = 1
     private const val PCM_BYTES_PER_SAMPLE = 2
     private const val WAV_HEADER_BYTES = 44
@@ -32,7 +31,7 @@ internal object AudioEncodingUtil {
 
             val format = MediaFormat.createAudioFormat(
                 MediaFormat.MIMETYPE_AUDIO_AAC,
-                SAMPLE_RATE_HZ,
+                CrisisAudioConfig.SAMPLE_RATE_HZ,
                 CHANNEL_COUNT,
             ).apply {
                 setInteger(MediaFormat.KEY_BIT_RATE, AAC_BIT_RATE)
@@ -67,7 +66,7 @@ internal object AudioEncodingUtil {
                         inputBuffer.clear()
                         inputBuffer.put(pcmBytes, inputOffset, chunkSize)
                         val presentationUs = inputOffset.toLong() * 1_000_000L /
-                            (SAMPLE_RATE_HZ * PCM_BYTES_PER_SAMPLE)
+                            (CrisisAudioConfig.SAMPLE_RATE_HZ * PCM_BYTES_PER_SAMPLE)
                         inputOffset += chunkSize
                         val flags = if (inputOffset >= pcmBytes.size) {
                             MediaCodec.BUFFER_FLAG_END_OF_STREAM
@@ -117,7 +116,7 @@ internal object AudioEncodingUtil {
 
     fun pcm16ToWavBytes(samples: ShortArray): ByteArray {
         val pcmByteSize = samples.size * PCM_BYTES_PER_SAMPLE
-        val byteRate = SAMPLE_RATE_HZ * CHANNEL_COUNT * PCM_BYTES_PER_SAMPLE
+        val byteRate = CrisisAudioConfig.SAMPLE_RATE_HZ * CHANNEL_COUNT * PCM_BYTES_PER_SAMPLE
         val blockAlign = (CHANNEL_COUNT * PCM_BYTES_PER_SAMPLE).toShort()
         val bitsPerSample = (PCM_BYTES_PER_SAMPLE * 8).toShort()
 
@@ -130,7 +129,7 @@ internal object AudioEncodingUtil {
         buffer.putInt(16)
         buffer.putShort(1)
         buffer.putShort(CHANNEL_COUNT.toShort())
-        buffer.putInt(SAMPLE_RATE_HZ)
+        buffer.putInt(CrisisAudioConfig.SAMPLE_RATE_HZ)
         buffer.putInt(byteRate)
         buffer.putShort(blockAlign)
         buffer.putShort(bitsPerSample)
@@ -151,6 +150,7 @@ data class CrisisAudioClip(
     val m4aBytes: ByteArray?,
     val file: File?,
     val wavFile: File,
+    val durationMs: Int,
 )
 
 class CrisisAudioRecorder(
@@ -299,6 +299,7 @@ class CrisisAudioRecorder(
             m4aBytes = m4aBytes,
             file = outputFile,
             wavFile = wavFile,
+            durationMs = CrisisAudioConfig.TOTAL_DURATION_MS,
         )
     }
 
@@ -339,11 +340,10 @@ class CrisisAudioRecorder(
     }
 
     companion object {
-        private const val SAMPLE_RATE_HZ = 16_000
-        private const val PRE_TRIGGER_SECONDS = 2
-        private const val POST_TRIGGER_SECONDS = 3
-        private const val PRE_TRIGGER_SAMPLES = SAMPLE_RATE_HZ * PRE_TRIGGER_SECONDS
-        private const val POST_TRIGGER_SAMPLES = SAMPLE_RATE_HZ * POST_TRIGGER_SECONDS
+        private const val PRE_TRIGGER_SAMPLES =
+            CrisisAudioConfig.SAMPLE_RATE_HZ * CrisisAudioConfig.PRE_TRIGGER_SECONDS
+        private const val POST_TRIGGER_SAMPLES =
+            CrisisAudioConfig.SAMPLE_RATE_HZ * CrisisAudioConfig.POST_TRIGGER_SECONDS
         private val sessionCounter = AtomicLong(0)
         private val FILE_NAME_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")

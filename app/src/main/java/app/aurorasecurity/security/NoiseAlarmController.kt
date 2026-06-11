@@ -24,7 +24,7 @@ data class NoiseAlarmUiState(
     val pendingTriggerSource: EmergencyTriggerSource? = null,
     val countdownSecondsRemaining: Int = 0,
     val useShakeDetection: Boolean = true,
-    val shakeThresholdG: Float = 3.0f,
+    val shakeThresholdG: Float = 2.8f,
     val currentG: Float = 1.0f,
     val isShaking: Boolean = false,
     val triggerDb: Float? = null,

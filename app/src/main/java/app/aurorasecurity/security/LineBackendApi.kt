@@ -113,7 +113,7 @@ class LineBackendApi {
             .put("filename", payload.filename)
             .put("analysisMessage", payload.analysisText)
             .put("audioBase64", Base64.getEncoder().encodeToString(file.readBytes()))
-            .put("durationMs", 5_000)
+            .put("durationMs", payload.durationMs)
             .toString()
 
         return@withContext try {

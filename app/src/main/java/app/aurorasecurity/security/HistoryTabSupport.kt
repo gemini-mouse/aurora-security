@@ -159,7 +159,7 @@ internal fun localizeHistoryAiLabel(
     return when (label.trim().uppercase(Locale.ROOT)) {
         "DANGER LEVEL" -> context.getString(R.string.danger_level_title)
         "ACOUSTIC ENVIRONMENT" -> context.getString(R.string.history_ai_label_acoustic_environment)
-        "DISRUPTIVE SOUNDS" -> context.getString(R.string.history_ai_label_disruptive_sounds)
+        "ALERT SOUNDS" -> context.getString(R.string.history_ai_label_alert_sounds)
         "VOCAL STRESS & EMOTION" -> context.getString(R.string.history_ai_label_vocal_stress_emotion)
         "SPEECH CONTENT" -> context.getString(R.string.history_ai_label_speech_content)
         "SITUATION ASSESSMENT" -> context.getString(R.string.history_ai_label_situation_assessment)

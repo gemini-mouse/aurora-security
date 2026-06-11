@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS device_auth (
   FOREIGN KEY (userId) REFERENCES users(userId)
 );
 
-CREATE TABLE IF NOT EXISTS contacts (
+CREATE TABLE IF NOT EXISTS telegram_contacts (
   id TEXT,
   userId TEXT,
   name TEXT,
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS line_contacts (
   FOREIGN KEY (userId) REFERENCES users(userId)
 );
 
-CREATE TABLE IF NOT EXISTS audio_upload (
+CREATE TABLE IF NOT EXISTS training_audio (
   id TEXT PRIMARY KEY,
   hashedUserId TEXT NOT NULL,
   objectKey TEXT NOT NULL UNIQUE,
@@ -87,8 +87,8 @@ CREATE TABLE IF NOT EXISTS audio_upload (
   createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_audio_upload_hashed_user_id
-ON audio_upload(hashedUserId, createdAt DESC);
+CREATE INDEX IF NOT EXISTS idx_training_audio_hashed_user_id
+ON training_audio(hashedUserId, createdAt DESC);
 
 CREATE INDEX IF NOT EXISTS idx_device_auth_token_hash
 ON device_auth(tokenHash);
@@ -113,12 +113,12 @@ BEGIN
   WHERE userId = NEW.userId;
 END;
 
-CREATE TRIGGER IF NOT EXISTS contacts_set_updated_at
-AFTER UPDATE ON contacts
+CREATE TRIGGER IF NOT EXISTS telegram_contacts_set_updated_at
+AFTER UPDATE ON telegram_contacts
 FOR EACH ROW
 WHEN NEW.updatedAt = OLD.updatedAt AND NEW.updatedAt != CURRENT_TIMESTAMP
 BEGIN
-  UPDATE contacts
+  UPDATE telegram_contacts
   SET updatedAt = CURRENT_TIMESTAMP
   WHERE id = NEW.id AND userId = NEW.userId;
 END;

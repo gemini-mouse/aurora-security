@@ -25,7 +25,7 @@ class NoiseMonitor {
         if (monitorJob?.isActive == true) return
 
         // Capture mono 16 kHz PCM in 512 ms frames to reduce wakeups while preserving continuous audio.
-        val sampleRate = SAMPLE_RATE_HZ
+        val sampleRate = CrisisAudioConfig.SAMPLE_RATE_HZ
         val minBufferSize = AudioRecord.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
@@ -105,7 +105,6 @@ class NoiseMonitor {
     }
 
     companion object {
-        private const val SAMPLE_RATE_HZ = 16_000
         private const val FRAME_SAMPLES = 8_192 // 512 ms at 16 kHz
         private val DB_OFFSET = 90.0 - 20.0 * log10(Short.MAX_VALUE.toDouble())
     }

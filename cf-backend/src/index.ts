@@ -4,6 +4,7 @@ type Bindings = {
   DB: D1Database;
   TRAINING_AUDIO_BUCKET: R2Bucket;
   ALARM_API_TOKEN: string;
+  SETUP_WEBHOOK_TOKEN?: string;
   TELEGRAM_BOT_TOKEN: string;
   LINE_CHANNEL_ACCESS_TOKEN?: string;
   LINE_CHANNEL_SECRET?: string;
@@ -45,10 +46,16 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 const ALERT_AUDIO_PREFIX = 'aurora-alert-audio';
 const ALERT_AUDIO_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_ALERT_AUDIO_DURATION_MS = 5_000;
+const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+const MAX_AUDIO_BASE64_LENGTH = Math.ceil(MAX_AUDIO_BYTES / 3) * 4;
+const BASE64_AUDIO_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 
 const requireBootstrapAuth = async (c: any, next: any) => {
   const sharedToken = (c.env.ALARM_API_TOKEN || '').trim();
-  if (!sharedToken) return await next();
+  if (!sharedToken) {
+    console.error('ALARM_API_TOKEN is not configured.');
+    return c.json({ error: 'Backend registration is temporarily unavailable' }, 503);
+  }
 
   const authHeader = (c.req.header('Authorization') || '').trim();
   if (authHeader !== `Bearer ${sharedToken}`) {
@@ -171,12 +178,53 @@ async function sendTelegramAudio(
 }
 
 function decodeBase64ToUint8Array(audioBase64: string) {
-  const byteCharacters = atob(audioBase64);
+  const normalizedBase64 = audioBase64.trim();
+  const estimatedBytes = estimateBase64DecodedBytes(normalizedBase64);
+  if (estimatedBytes > MAX_AUDIO_BYTES) {
+    throw new Error(`Audio payload exceeds the ${MAX_AUDIO_BYTES} byte limit`);
+  }
+
+  const byteCharacters = atob(normalizedBase64);
   const byteNumbers = new Array(byteCharacters.length);
   for (let i = 0; i < byteCharacters.length; i++) {
     byteNumbers[i] = byteCharacters.charCodeAt(i);
   }
-  return new Uint8Array(byteNumbers);
+  const decodedBytes = new Uint8Array(byteNumbers);
+  if (decodedBytes.byteLength > MAX_AUDIO_BYTES) {
+    throw new Error(`Audio payload exceeds the ${MAX_AUDIO_BYTES} byte limit`);
+  }
+  return decodedBytes;
+}
+
+function estimateBase64DecodedBytes(audioBase64: string) {
+  const normalizedBase64 = audioBase64.trim();
+  if (normalizedBase64.length > MAX_AUDIO_BASE64_LENGTH) {
+    return MAX_AUDIO_BYTES + 1;
+  }
+
+  const padding = normalizedBase64.endsWith('==')
+    ? 2
+    : normalizedBase64.endsWith('=')
+      ? 1
+      : 0;
+  return Math.floor((normalizedBase64.length * 3) / 4) - padding;
+}
+
+function validateAudioBase64(audioBase64: unknown): { error: string; status: 400 | 413 } | null {
+  if (typeof audioBase64 !== 'string') {
+    return { error: 'audioBase64 is required', status: 400 };
+  }
+  const normalizedBase64 = audioBase64.trim();
+  if (normalizedBase64 === '') {
+    return { error: 'audioBase64 is required', status: 400 };
+  }
+  if (normalizedBase64.length % 4 !== 0 || !BASE64_AUDIO_PATTERN.test(normalizedBase64)) {
+    return { error: 'audioBase64 must be valid base64', status: 400 };
+  }
+  if (estimateBase64DecodedBytes(audioBase64) > MAX_AUDIO_BYTES) {
+    return { error: 'audioBase64 must decode to 2MB or less', status: 413 };
+  }
+  return null;
 }
 
 async function sha256Hex(value: string) {
@@ -225,7 +273,7 @@ async function markUserAlertSent(db: D1Database, userId: string) {
 
 async function markTelegramContactAlertSent(db: D1Database, userId: string, contactId: string) {
   await db.prepare(
-    'UPDATE contacts SET lastAlertSentAt = CURRENT_TIMESTAMP WHERE userId = ? AND id = ?'
+    'UPDATE telegram_contacts SET lastAlertSentAt = CURRENT_TIMESTAMP WHERE userId = ? AND id = ?'
   ).bind(userId, contactId).run();
 }
 
@@ -660,6 +708,17 @@ app.get('/line/audio/:date/:filename', async (c) => {
 });
 
 app.get('/setup-webhook', async (c) => {
+  const setupToken = (c.env.SETUP_WEBHOOK_TOKEN || '').trim();
+  if (!setupToken) {
+    console.error('SETUP_WEBHOOK_TOKEN is not configured.');
+    return c.json({ error: 'Webhook setup is not configured' }, 503);
+  }
+
+  const authHeader = (c.req.header('Authorization') || '').trim();
+  if (authHeader !== `Bearer ${setupToken}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   const botToken = c.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     return c.text('Error: TELEGRAM_BOT_TOKEN secret is not set.', 500);
@@ -761,15 +820,15 @@ app.post('/users/register', requireDeviceAuth, async (c) => {
          lastRegisteredAt = CURRENT_TIMESTAMP`
     ).bind(userId, bindCode, deviceName || contactLabel || 'Phone').run();
 
-    const { results: contacts } = await c.env.DB.prepare(
-      'SELECT id, name, telegramHandle, status FROM contacts WHERE userId = ?'
+    const { results: telegramContacts } = await c.env.DB.prepare(
+      'SELECT id, name, telegramHandle, status FROM telegram_contacts WHERE userId = ?'
     ).bind(userId).all();
 
     return c.json({
       ok: true,
       userId,
       bindCode,
-      contacts: contacts || [],
+      telegramContacts: telegramContacts || [],
     });
   } catch (err: any) {
     console.error('Register error:', err);
@@ -852,18 +911,19 @@ app.post('/push/bind', requireDeviceAuth, async (c) => {
   }
 });
 
-app.get('/users/:userId/contacts', requireDeviceAuth, async (c) => {
+app.get('/users/:userId/telegram-contacts', requireDeviceAuth, async (c) => {
   try {
     const userId = c.req.param('userId');
     const authError = requireMatchingUser(c, userId);
     if (authError) return authError;
 
-    const { results: contacts } = await c.env.DB.prepare(
-      'SELECT id, name, telegramHandle, status FROM contacts WHERE userId = ?'
+    const { results: telegramContacts } = await c.env.DB.prepare(
+      'SELECT id, name, telegramHandle, status FROM telegram_contacts WHERE userId = ?'
     ).bind(userId).all();
 
-    return c.json({ contacts: contacts || [] });
+    return c.json({ telegramContacts: telegramContacts || [] });
   } catch (err) {
+    console.error('Fetch Telegram contacts error:', err);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -916,7 +976,7 @@ app.get('/users/:userId/line-contacts', requireDeviceAuth, async (c) => {
   }
 });
 
-app.delete('/users/:userId/contacts/:contactId', requireDeviceAuth, async (c) => {
+app.delete('/users/:userId/telegram-contacts/:contactId', requireDeviceAuth, async (c) => {
   try {
     const userId = c.req.param('userId');
     const contactId = c.req.param('contactId');
@@ -929,12 +989,12 @@ app.delete('/users/:userId/contacts/:contactId', requireDeviceAuth, async (c) =>
     if (authError) return authError;
 
     const result = await c.env.DB.prepare(
-      'DELETE FROM contacts WHERE userId = ? AND id = ?'
+      'DELETE FROM telegram_contacts WHERE userId = ? AND id = ?'
     ).bind(userId, contactId).run();
 
     return c.json({ ok: true, deleted: result.meta.changes || 0 });
   } catch (err) {
-    console.error('Delete contact error:', err);
+    console.error('Delete Telegram contact error:', err);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -998,7 +1058,7 @@ app.post('/alerts', requireDeviceAuth, async (c) => {
 
   try {
     const { results: boundContacts } = await c.env.DB.prepare(
-      "SELECT id, chatId FROM contacts WHERE userId = ? AND status = 'Bound'"
+      "SELECT id, chatId FROM telegram_contacts WHERE userId = ? AND status = 'Bound'"
     ).bind(userId).all();
 
     if (!boundContacts || boundContacts.length === 0) {
@@ -1080,6 +1140,10 @@ app.post('/line/alerts/audio-analysis', requireDeviceAuth, async (c) => {
   if (!userId || !audioBase64 || !analysisMessage) {
     return c.json({ error: 'userId, audioBase64, and analysisMessage are required' }, 400);
   }
+  const audioValidationError = validateAudioBase64(audioBase64);
+  if (audioValidationError) {
+    return c.json({ error: audioValidationError.error }, audioValidationError.status);
+  }
 
   const authError = requireMatchingUser(c, userId);
   if (authError) return authError;
@@ -1156,6 +1220,10 @@ app.post('/alerts/audio', requireDeviceAuth, async (c) => {
   if (!userId || !audioBase64) {
     return c.json({ error: 'userId and audioBase64 are required' }, 400);
   }
+  const audioValidationError = validateAudioBase64(audioBase64);
+  if (audioValidationError) {
+    return c.json({ error: audioValidationError.error }, audioValidationError.status);
+  }
 
   const authError = requireMatchingUser(c, userId);
   if (authError) return authError;
@@ -1167,7 +1235,7 @@ app.post('/alerts/audio', requireDeviceAuth, async (c) => {
   try {
     const telegramContacts = sendTelegram
       ? ((await c.env.DB.prepare(
-        "SELECT id, chatId FROM contacts WHERE userId = ? AND status = 'Bound'"
+        "SELECT id, chatId FROM telegram_contacts WHERE userId = ? AND status = 'Bound'"
       ).bind(userId).all()).results || []) as { id: string; chatId: number }[]
       : [];
 
@@ -1278,6 +1346,10 @@ app.post('/training/audio', requireDeviceAuth, async (c) => {
   if (!userId || !audioBase64) {
     return c.json({ error: 'userId and audioBase64 are required' }, 400);
   }
+  const audioValidationError = validateAudioBase64(audioBase64);
+  if (audioValidationError) {
+    return c.json({ error: audioValidationError.error }, audioValidationError.status);
+  }
 
   const authError = requireMatchingUser(c, userId);
   if (authError) return authError;
@@ -1309,7 +1381,7 @@ app.post('/training/audio', requireDeviceAuth, async (c) => {
     });
 
     await c.env.DB.prepare(
-      `INSERT INTO audio_upload (
+      `INSERT INTO training_audio (
         id, hashedUserId, objectKey, filename, triggerSource, modelDangerLevel,
         capturedAtEpochMs, sampleRateHz, durationMs, contentType, byteSize
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1357,7 +1429,7 @@ app.post('/alerts/analysis', requireDeviceAuth, async (c) => {
 
   try {
     const { results: boundContacts } = await c.env.DB.prepare(
-      "SELECT id, chatId FROM contacts WHERE userId = ? AND status = 'Bound'"
+      "SELECT id, chatId FROM telegram_contacts WHERE userId = ? AND status = 'Bound'"
     ).bind(userId).all();
 
     if (!boundContacts || boundContacts.length === 0) {
@@ -1500,7 +1572,7 @@ app.post('/telegram/webhook', async (c) => {
     const telegramHandle = sanitizeTelegramHandle(message.from?.username || '');
 
     await c.env.DB.prepare(
-      `INSERT INTO contacts (id, userId, name, telegramHandle, status, chatId, boundAt)
+      `INSERT INTO telegram_contacts (id, userId, name, telegramHandle, status, chatId, boundAt)
        VALUES (?, ?, ?, ?, 'Bound', ?, CURRENT_TIMESTAMP)
        ON CONFLICT(id, userId) DO UPDATE SET
          name = excluded.name,

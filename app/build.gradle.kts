@@ -28,8 +28,8 @@ android {
         applicationId = "app.aurorasecurity.security"
         minSdk = 24
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.3.7"
+        versionCode = 18
+        versionName = "1.3.11"
 
         buildConfigField(
             "String",
